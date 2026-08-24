@@ -1,5 +1,5 @@
 /* ============================================================
- * 计算机网络技术2501班 班级工作台APP
+ * 计算机网络技术2501班 班级工作台APP（云端版）
  * 云南工业信息职业学院
  * 移动端优先 · 校园简约风格 · Supabase 云端共享
  * ============================================================ */
@@ -103,7 +103,9 @@ const Store = {
     const data = {};
     keys.forEach(function(k){ data[k] = self.data[k]; });
     this.dirty = {};
-    this._push(keys, data).finally(function(){
+    // 注意：upsert().select() 返回的是 thenable（非标准 Promise），
+    // 需用 Promise.resolve() 包一层才能安全使用 .finally
+    Promise.resolve(self._push(keys, data)).finally(function(){
       self.saving = false;
       if (Object.keys(self.dirty).length) self.scheduleSave();
     });
@@ -356,9 +358,52 @@ function renderMine(){
     <div class="card">
       <div class="card-title">账号操作</div>
       ${u.role === 'leader' ? `<button class="btn ghost full" onclick="showManageStudents()">👥 管理学生名单</button>` : ''}
+      <button class="btn ghost full" onclick="showChangePwd()">🔑 修改密码</button>
       <button class="btn ghost full" onclick="logout()">🚪 退出登录</button>
     </div>
   </div>`;
+}
+
+// ============== 修改密码 ==============
+function showChangePwd(){
+  openModal(`
+    <h3>修改密码</h3>
+    <div class="field"><label>旧密码</label><input id="cp-old" type="password" placeholder="当前密码" /></div>
+    <div class="field"><label>新密码</label><input id="cp-new" type="password" placeholder="至少6位" /></div>
+    <div class="field"><label>确认新密码</label><input id="cp-new2" type="password" placeholder="再输入一次新密码" /></div>
+    <div class="modal-btns">
+      <button class="btn ghost" onclick="closeModal()">取消</button>
+      <button class="btn primary" onclick="saveNewPwd()">保存修改</button>
+    </div>
+  `);
+}
+
+async function saveNewPwd(){
+  if (!currentUser) return toast('请先登录');
+  const oldPwd = val('cp-old'); const newPwd = val('cp-new'); const newPwd2 = val('cp-new2');
+  if (!oldPwd || !newPwd || !newPwd2) return toast('请填写完整');
+  if (newPwd.length < 6) return toast('新密码至少6位');
+  if (newPwd !== newPwd2) return toast('两次输入的新密码不一致');
+  if (oldPwd === newPwd) return toast('新密码不能与旧密码相同');
+  try {
+    toast('正在验证...');
+    // 1. 校验旧密码
+    const oldHash = await sha256Hex(currentUser.username + ':' + oldPwd);
+    const { data: u, error: qErr } = await sb.from('users').select('password')
+      .eq('username', currentUser.username).maybeSingle();
+    if (qErr) throw qErr;
+    if (!u || u.password !== oldHash) return toast('旧密码错误');
+    // 2. 更新为新密码
+    const newHash = await sha256Hex(currentUser.username + ':' + newPwd);
+    const { error: upErr } = await sb.from('users')
+      .update({ password: newHash, updated_at: new Date().toISOString() })
+      .eq('username', currentUser.username);
+    if (upErr) throw upErr;
+    addLog('修改密码', '用户主动修改密码', 'account');
+    closeModal(); toast('密码修改成功，下次登录请用新密码');
+  } catch(e){
+    toast('修改失败：' + (e.message || '未知错误'));
+  }
 }
 
 // ============== 学生名单管理（班长） ==============
