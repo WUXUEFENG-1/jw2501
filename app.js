@@ -1,7 +1,7 @@
 /* ============================================================
- * 计算机网络技术2501班 班级工作台APP（云端共享版）
+ * 计算机网络技术2501班 班级工作台APP
  * 云南工业信息职业学院
- * 单页应用 - Supabase 云端数据 + 账号密码登录
+ * 单页应用 - LocalStorage持久化
  * ============================================================ */
 
 // ============== 常量 ==============
@@ -12,7 +12,7 @@ const DEFAULT_BZ_PWD = 'bz2501';
 const DEFAULT_BZR_PWD = 'bzr2501';
 
 // ============== Supabase 客户端 ==============
-// 请替换为你自己的项目 URL 和 publishable key
+// 请替换为你自己的项目 URL 和 publishable key（见文末说明）
 const SUPABASE_URL = 'https://vvmnzyhbjcskyyofvemj.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_MsfALtjxliSa9kTv_cVdhw_x145_IA5';
 // 注意：不要用 const supabase 命名，避免与 supabase-js 的全局 supabase 冲突
@@ -62,7 +62,7 @@ function confirmDialog(msg) {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal" style="max-width:340px;border-radius:14px;margin:auto;">
-        <div class="modal-header"><span>确认</span><button class="modal-close">×</button></div>
+        <div class="modal-header"><span>确认</span><button class="modal-close">&times;</button></div>
         <div class="modal-body" style="text-align:center;font-size:0.9rem;">${msg}</div>
         <div class="modal-footer">
           <button class="btn btn-gray" style="flex:1;" id="dlgCancel">取消</button>
@@ -83,7 +83,7 @@ function promptDialog(title, placeholder='') {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal" style="max-width:340px;border-radius:14px;margin:auto;">
-        <div class="modal-header"><span>${title}</span><button class="modal-close">×</button></div>
+        <div class="modal-header"><span>${title}</span><button class="modal-close">&times;</button></div>
         <div class="modal-body"><input type="text" id="dlgInput" placeholder="${placeholder}" style="width:100%;padding:9px;border:1px solid var(--gray-3);border-radius:7px;"></div>
         <div class="modal-footer">
           <button class="btn btn-gray" style="flex:1;" id="dlgCancel">取消</button>
@@ -108,7 +108,7 @@ function decodeBase64(str) {
 }
 function escapeHtml(s) {
   if (!s) return '';
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'''}[c]));
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function fileToBase64(file) {
   return new Promise(resolve => {
@@ -161,6 +161,7 @@ const Store = {
       return obj;
     } catch (e) {
       console.error('云端加载失败，使用本地缓存:', e);
+      // 降级：读本地缓存
       const local = {};
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
@@ -182,6 +183,7 @@ const Store = {
             .from('store_data')
             .upsert({ key, value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
           if (error) console.error(`推送 ${key} 失败:`, error);
+          // 本地备份
           localStorage.setItem(LS_PREFIX + key, JSON.stringify(val));
         } catch (e) { console.error(`推送 ${key} 异常:`, e); }
       }
@@ -248,11 +250,13 @@ const Auth = {
     if (error) { console.error('登录查询失败:', error); return { ok:false, msg:'登录失败，请检查网络' }; }
     const user = data?.[0];
     if (!user) return { ok:false, msg:'账号不存在' };
+    // 密码比对（bcrypt）
     const { data: check } = await sb.rpc('check_password', {
       username_arg: username,
       password_arg: password
     });
     if (!check) return { ok:false, msg:'密码错误' };
+    // 登录成功
     const sessionUser = {
       role: user.role,
       id: user.stu_no || user.username,
@@ -265,7 +269,7 @@ const Auth = {
     return { ok:true, user: sessionUser };
   },
 
-  // 登录并加载数据后，用学生名单的 id 对齐业务关联
+  // 登录并加载数据后，用学生名单的 id 对齐业务关联（补助/考勤等用名单 id）
   syncUserWithStudents() {
     const u = this.current();
     if (!u || u.role !== 'student') return;
@@ -300,6 +304,7 @@ const Router = {
     const parts = hash.split('/');
     let handler = this.routes[''];
     let matchedLen = 0;
+    // 最长前缀匹配，支持二级/三级路由
     for (let i = parts.length; i >= 0; i--) {
       const key = parts.slice(0, i).join('/');
       if (this.routes[key] !== undefined) { handler = this.routes[key]; matchedLen = i; break; }
@@ -312,7 +317,7 @@ const Router = {
 // ============== 渲染辅助 ==============
 function renderTopbar(title, backHash='', action='') {
   const backBtn = backHash
-    ? `<button class="btn-back" onclick="Router.go('${backHash}')">‹</button>`
+    ? `<button class="btn-back" onclick="Router.go('${backHash}')">&lsaquo;</button>`
     : `<span class="btn-back"></span>`;
   return `<div class="topbar">${backBtn}<span class="title">${title}</span>${action}</div>`;
 }
@@ -343,7 +348,7 @@ function renderBottomNav(active='') {
 function emptyState(text='') {
   return `<div class="empty-state">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 13h6M9 17h6M9 9h6M5 5h14a1 1 0 011 1v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1z"/></svg>
-    <p>${text || '暂无数据'}</p >
+    <p>${text || '暂无数据'}</p>
   </div>`;
 }
 
@@ -354,13 +359,26 @@ function downloadExcel(filename, data, sheetName='Sheet1') {
   XLSX.writeFile(wb, filename);
 }
 
+function downloadMultiSheet(filename, sheets) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(s => {
+    const ws = XLSX.utils.json_to_sheet(s.data);
+    XLSX.utils.book_append_sheet(wb, ws, s.name);
+  });
+  XLSX.writeFile(wb, filename);
+}
+
+// ============== 模块占位（后续注册） ==============
+// 模块将在下方定义后注册到Router
+
 // ============== 应用入口 ==============
 document.addEventListener('DOMContentLoaded', () => {
   Router.init();
 });
 
-// ============== 角色登录页 ==============
+// ============== 角色入口页 ==============
 Router.register('', () => {
+  // 已登录：先加载云端数据再进工作台（支持刷新）
   if (Auth.current()) {
     (async () => {
       if (!Store.ready) {
@@ -389,7 +407,7 @@ Router.register('', () => {
         <button class="btn btn-primary btn-block" id="loginBtn">登 录</button>
         <p class="text-muted text-small text-center mt-12" style="margin-top:16px;">
           数据云端共享 · 全班账号由班长统一管理
-        </p >
+        </p>
       </div>
     </div>
   `;
@@ -401,7 +419,9 @@ Router.register('', () => {
     btn.disabled = true; btn.textContent = '登录中...';
     const res = await Auth.login(username, password);
     if (res.ok) {
+      // 拉取云端全部数据
       try { await Store.loadAll(); } catch (e) { console.error('加载数据失败', e); }
+      // 用学生名单 id 对齐（补助/考勤等业务关联）
       Auth.syncUserWithStudents();
       toast('登录成功');
       Router.go('workbench');
@@ -413,6 +433,9 @@ Router.register('', () => {
   $('#loginBtn').onclick = doLogin;
   $('#loginPassword').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
 });
+
+// 应用启动：若已登录则自动加载云端数据
+Router.register('__boot__', () => {});
 
 // ============== 工作台首页 ==============
 Router.register('workbench', () => {
@@ -428,7 +451,9 @@ Router.register('workbench', () => {
         <div class="wh-name">${u.role==='student' ? '学生' : u.role==='monitor' ? '班长' : '班主任'}</div>
         <div class="wh-role">${SCHOOL_NAME} · ${CLASS_NAME}</div>
       </div>
+
       ${reminderHtml}
+
       <div class="module-grid">
         ${renderModuleItem('notify', '班务通知', '<path d="M18 16v-5a6 6 0 10-12 0v5l-2 2v1h16v-1l-2-2zM10 19a2 2 0 004 0"/>')}
         ${renderModuleItem('subsidy', '补助签字', '<path d="M3 7l9-4 9 4M5 8v10h14V8M9 14l2 2 4-4"/>')}
@@ -443,6 +468,8 @@ Router.register('workbench', () => {
     </div>
     ${renderBottomNav('workbench')}
   `;
+  // 更新提醒红点
+  if (Reminder) Reminder.updateBadges(u);
 });
 
 function renderModuleItem(key, label, iconPath) {
@@ -457,7 +484,7 @@ function getModuleBadge(key) {
   const u = Auth.current();
   if (!u) return 0;
   switch(key) {
-    case 'notify': return 0;
+    case 'notify': return 0; // 通知已读红点逻辑后续处理
     case 'subsidy': {
       if (u.role === 'student') {
         const list = Store.get('subsidies', []);
@@ -532,16 +559,16 @@ Router.register('mine', () => {
         <div class="card-header">快捷功能</div>
         <div class="list-item" onclick="Router.go('notify')">
           <div class="li-main"><div class="li-title">班务通知</div><div class="li-desc">查看所有通知</div></div>
-          <span class="li-arrow">›</span>
+          <span class="li-arrow">&rsaquo;</span>
         </div>
         <div class="list-item" onclick="exportAllData()">
-          <div class="li-main"><div class="li-title">导出数据备份</div><div class="li-desc">导出全部数据为JSON</div></div>
-          <span class="li-arrow">›</span>
+          <div class="li-main"><div class="li-title">导出数据备份</div><div class="li-desc">导出全部数据为Excel/JSON</div></div>
+          <span class="li-arrow">&rsaquo;</span>
         </div>
         ${(u.role==='monitor'||u.role==='teacher') ? `
         <div class="list-item" onclick="Router.go('settings')">
           <div class="li-main"><div class="li-title">系统设置</div><div class="li-desc">账号管理、缴费规则、数据管理</div></div>
-          <span class="li-arrow">›</span>
+          <span class="li-arrow">&rsaquo;</span>
         </div>` : ''}
       </div>
       <div style="padding:0 12px;">
@@ -577,7 +604,16 @@ function exportAllData() {
   toast('已导出备份文件');
 }
 
-// ============== 模块1：班务通知 ==============
+// ============== 通知页占位（后续完整实现） ==============
+Router.register('notify', () => Notifications.renderList());
+Router.register('notify/detail', (p) => Notifications.renderDetail(p[0]));
+
+// ============== 我的通知页（底部tab入口） ==============
+// notify tab也跳转到通知列表
+
+// ============================================================
+// 模块1：班务通知
+// ============================================================
 const Notifications = {
   getList() { return Store.get('notifications', []); },
   save(list) { Store.set('notifications', list); },
@@ -610,6 +646,9 @@ const Notifications = {
               ${read ? '<span class="tag tag-gray">已读</span>' : '<span class="tag tag-primary">未读</span>'}
             </div>
             <div class="li-meta">${escapeHtml(n.publisher)} · ${fmtDateShort(n.publishTime)}</div>
+            ${n.images?.length ? `<div class="text-small text-muted mt-8">[图片${n.images.length}]</div>`:''}
+            ${n.files?.length ? `<div class="text-small text-muted">[附件${n.files.length}]</div>`:''}
+            ${n.qr ? `<div class="text-small text-muted">[二维码]</div>`:''}
           </div>
         </div>`;
     }).join('');
@@ -628,6 +667,7 @@ const Notifications = {
     if (!u) { Router.go(''); return; }
     const n = this.getList().find(x => x.id === id);
     if (!n) { toast('通知不存在'); Router.go('notify'); return; }
+    // 自动标记已读（学生）
     if (u.role === 'student' && !n.reads?.some(r => r.stuId === u.id)) {
       n.reads = n.reads || [];
       n.reads.push({ stuId:u.id, name:u.name, time:now() });
@@ -654,9 +694,12 @@ const Notifications = {
           </div>
         </div>
         ${n.images?.length ? `<div class="card"><div class="card-header">图片</div><div class="card-body"><div class="img-preview-list">${
-          n.images.map((img,i) => `<div class="ip-item" onclick="previewImage('${img}')">< img src="${img}"></div>`).join('')
+          n.images.map((img,i) => `<div class="ip-item" onclick="previewImage('${img}')"><img src="${img}"></div>`).join('')
         }</div></div></div>`:''}
         ${n.qr ? `<div class="card"><div class="card-header">二维码</div><div class="card-body qr-display" id="qrBox"></div></div>`:''}
+        ${n.files?.length ? `<div class="card"><div class="card-header">附件</div><div class="card-body">${
+          n.files.map(f => `<div class="list-item" onclick="downloadFile('${f.data}','${escapeHtml(f.name)}')"><div class="li-main"><div class="li-title">${escapeHtml(f.name)}</div></div><span class="li-arrow">⬇</span></div>`).join('')
+        }</div></div>`:''}
         <div class="card">
           <div class="card-header">已读确认</div>
           <div class="card-body">
@@ -666,12 +709,16 @@ const Notifications = {
               : `<div class="text-small text-muted">已确认 ${readCount} 人</div>${this.renderReadList(n.reads||[])}`}
           </div>
         </div>
+      <        </div>
       </div>
-      ${renderBottomNav('notify')}
-    `;
+    </div>
+    ${renderBottomNav('notify')}
+  `;
     if (n.qr) {
-      try { new QRCode($('#qrBox'), { text:n.qr, width:180, height:180 }); }
-      catch { $('#qrBox').innerHTML = `<div class="text-small">${escapeHtml(n.qr)}</div>`; }
+      // 生成二维码
+      try {
+        new QRCode($('#qrBox'), { text:n.qr, width:180, height:180 });
+      } catch { $('#qrBox').innerHTML = `<div class="text-small">${escapeHtml(n.qr)}</div>`; }
     }
   },
 
@@ -700,12 +747,13 @@ const Notifications = {
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
       <div class="modal">
-        <div class="modal-header"><span>发布通知</span><button class="modal-close">×</button></div>
+        <div class="modal-header"><span>发布通知</span><button class="modal-close">&times;</button></div>
         <div class="modal-body">
           <div class="form-group"><label>通知标题</label><input type="text" id="ntTitle" placeholder="请输入标题"></div>
           <div class="form-group"><label>通知内容</label><textarea id="ntContent" placeholder="请输入通知正文"></textarea></div>
           <div class="form-group"><label>二维码内容（可选）</label><input type="text" id="ntQr" placeholder="输入文字/链接生成二维码"></div>
           <div class="form-group"><label>图片（可选）</label><input type="file" id="ntImages" accept="image/*" multiple></div>
+          <div class="form-group"><label>附件（可选）</label><input type="file" id="ntFiles" multiple></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
@@ -720,12 +768,23 @@ const Notifications = {
       if (!title || !content) { toast('请填写标题和内容'); return; }
       const qr = overlay.querySelector('#ntQr').value.trim();
       const imgFiles = [...overlay.querySelector('#ntImages').files];
+      const fileFiles = [...overlay.querySelector('#ntFiles').files];
       const images = [];
-      for (const f of imgFiles) { if (f.size > 2*1024*1024) { toast('图片超过2MB'); return; } images.push(await fileToBase64(f)); }
+      for (const f of imgFiles) {
+        if (f.size > 2*1024*1024) { toast(`图片${f.name}超过2MB`); return; }
+        images.push(await fileToBase64(f));
+      }
+      const files = [];
+      for (const f of fileFiles) {
+        if (f.size > 5*1024*1024) { toast(`附件${f.name}超过5MB`); return; }
+        files.push({ name:f.name, data: await fileToBase64(f) });
+      }
       const list = this.getList();
       const n = {
-        id: uid(), title, content, qr, images, files: [],
-        publisher: u.name, role: u.role, publishTime: now(), reads: [],
+        id: uid(), title, content, qr,
+        images, files,
+        publisher: u.name, role: u.role,
+        publishTime: now(), reads: [],
       };
       list.push(n);
       this.save(list);
@@ -741,1504 +800,1960 @@ function previewImage(src) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.style.alignItems = 'center';
-  overlay.innerHTML = `<div style="max-width:90%;max-height:80vh;">< img src="${src}" style="width:100%;border-radius:8px;"></div>`;
+  overlay.innerHTML = `<div style="max-width:90%;max-height:80vh;"><img src="${src}" style="width:100%;border-radius:8px;"></div>`;
   overlay.onclick = () => overlay.remove();
   document.body.appendChild(overlay);
 }
 
+function downloadFile(dataUrl, name) {
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = name;
+  a.click();
+}
+
 function canManage() { return Auth.canManage(); }
 
-// 路由
-Router.register('notify', () => Notifications.renderList());
-Router.register('notify/detail', (p) => Notifications.renderDetail(p[0]));
+// ============================================================
+// 模块2：补助签字确认（防代签）
+// ============================================================
+const Subsidy = {
+  getList() { return Store.get('subsidies', []); },
+  save(list) { Store.set('subsidies', list); },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    const list = this.getList().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    const app = $('#app');
+    const canImport = u.role === 'monitor';
+    app.innerHTML = `
+      ${renderTopbar('补助签字', 'workbench', canImport ? `<button class="btn-action" onclick="Subsidy.showImport()">导入</button>` : '')}
+      <div class="page page-with-nav">
+        <div id="subsidyList">${this.renderListItems(list, u)}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderListItems(list, u) {
+    if (!list.length) return emptyState('暂无补助签字任务');
+    return list.map(t => {
+      const expired = isExpired(t.deadline);
+      const total = t.items.length;
+      const signed = t.signs.filter(s => s.valid !== false).length;
+      const mySign = t.signs.find(s => s.stuId === u.id);
+      const myItem = t.items.find(i => i.stuId === u.id);
+      let myStatus = '';
+      if (u.role === 'student' && myItem) {
+        if (mySign?.valid === false) myStatus = '<span class="tag tag-danger">已作废</span>';
+        else if (mySign) myStatus = '<span class="tag tag-success">已签字</span>';
+        else if (expired) myStatus = '<span class="tag tag-gray">已截止</span>';
+        else myStatus = '<span class="tag tag-warning">待签字</span>';
+      }
+      return `
+        <div class="card" onclick="Router.go('subsidy/detail/${t.id}')">
+          <div class="card-body">
+            <div class="flex-between">
+              <span class="li-title fw-600">${escapeHtml(t.title)}</span>
+              ${expired ? '<span class="tag tag-gray">已截止</span>' : '<span class="tag tag-warning">进行中</span>'}
+            </div>
+            <div class="li-meta">截止：${fmtDate(t.deadline, true)}</div>
+            <div class="li-meta">签字进度：${signed}/${total}</div>
+            <div class="progress-bar"><div class="pb-fill" style="width:${total?signed/total*100:0}%"></div></div>
+            ${myStatus ? `<div class="mt-8">${myStatus}</div>`:''}
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  renderDetail(id) {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    const t = this.getList().find(x => x.id === id);
+    if (!t) { toast('任务不存在'); Router.go('subsidy'); return; }
+    const expired = isExpired(t.deadline);
+    const signed = t.signs.filter(s => s.valid !== false);
+    const signedCount = signed.length;
+    const total = t.items.length;
+    const mySign = t.signs.find(s => s.stuId === u.id);
+    const myItem = t.items.find(i => i.stuId === u.id);
+
+    let actionHtml = '';
+    if (u.role === 'student' && myItem && !mySign && !expired) {
+      actionHtml = `<button class="btn btn-primary btn-block mt-8" onclick="Subsidy.showSign('${t.id}')">电子签字</button>`;
+    } else if (u.role === 'student' && myItem && mySign && mySign.valid !== false) {
+      actionHtml = `<div class="text-center text-success text-small mt-8">您已签字 · ${fmtDate(mySign.time, true)}</div>`;
+    } else if (u.role === 'student' && myItem && mySign?.valid === false) {
+      actionHtml = `<div class="text-center text-danger text-small mt-8">您的签字已被判定无效（疑似代签）</div>`;
+    }
+
+    let manageHtml = '';
+    if (u.role === 'monitor' || u.role === 'teacher') {
+      manageHtml = `
+        <div class="card">
+          <div class="card-header">签字明细</div>
+          <div class="card-body" style="padding:0;">
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th>姓名</th><th>金额</th><th>状态</th><th>签字时间</th>${u.role==='monitor'?'<th>操作</th>':''}</tr></thead>
+                <tbody>
+                  ${t.items.map(item => {
+                    const s = t.signs.find(x => x.stuId === item.stuId);
+                    let st = '<span class="tag tag-gray">未签</span>';
+                    let time = '-';
+                    let op = '';
+                    if (s?.valid === false) { st = '<span class="tag tag-danger">无效</span>'; time = fmtDate(s.time, true); }
+                    else if (s) { st = '<span class="tag tag-success">已签</span>'; time = fmtDate(s.time, true); }
+                    if (u.role === 'monitor' && s && s.valid !== false) {
+                      op = `<button class="btn btn-sm btn-outline" onclick="Subsidy.invalidate('${t.id}','${item.stuId}')">作废(代签)</button>`;
+                    }
+                    const stu = Store.getStudent(item.stuId);
+                    return `<tr><td>${escapeHtml(stu?.name || item.stuId)}</td><td>${item.amount}</td><td>${st}</td><td>${time}</td>${u.role==='monitor'?`<td>${op}</td>`:''}</tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        ${u.role === 'monitor' ? `<button class="btn btn-outline btn-block" style="margin:0 12px;max-width:calc(100% - 24px);" onclick="Subsidy.export('${t.id}')">导出Excel归档</button>`:''}
+      `;
+    }
+
+    $('#app').innerHTML = `
+      ${renderTopbar('补助签字详情', 'subsidy')}
+      <div class="page page-with-nav">
+        <div class="card">
+          <div class="card-body">
+            <h2 style="font-size:1.1rem;margin-bottom:6px;">${escapeHtml(t.title)}</h2>
+            <div class="text-muted text-small">截止时间：${fmtDate(t.deadline, true)} ${expired?'(已截止)':''}</div>
+            <div class="text-muted text-small">导入人：${escapeHtml(t.creator)} · ${fmtDate(t.createdAt, true)}</div>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="sc-num">${signedCount}</div><div class="sc-label">已签字</div></div>
+          <div class="stat-card"><div class="sc-num">${total - signedCount}</div><div class="sc-label">未签字</div></div>
+        </div>
+        ${u.role === 'student' && myItem ? `
+          <div class="card">
+            <div class="card-header">我的补助明细</div>
+            <div class="card-body">
+              <div class="detail-row"><span class="dr-label">姓名</span><span class="dr-value">${escapeHtml(u.name)}</span></div>
+              <div class="detail-row"><span class="dr-label">补助金额</span><span class="dr-value">¥${myItem.amount}</span></div>
+              <div class="detail-row"><span class="dr-label">签字状态</span><span class="dr-value">${mySign?.valid===false?'<span class="text-danger">无效</span>':mySign?'<span class="text-success">已签字</span>':'<span class="text-warning">未签字</span>'}</span></div>
+            </div>
+          </div>
+          ${actionHtml}
+        `:''}
+        ${manageHtml}
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  showImport() {
+    const u = Auth.current();
+    if (u.role !== 'monitor') { toast('无权限'); return; }
+    const students = Store.getStudents();
+    if (!students.length) { toast('请先导入学生名单'); Router.go('ledger'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>导入补助明细</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>任务标题</label><input type="text" id="sbTitle" placeholder="如：2025秋季补助发放签字"></div>
+          <div class="form-group"><label>截止时间</label><input type="datetime-local" id="sbDeadline"></div>
+          <div class="form-group">
+            <label>导入方式</label>
+            <div class="seg-control" style="margin:0;">
+              <button class="seg-item active" data-mode="manual" onclick="Subsidy.toggleImportMode('manual')">手动录入</button>
+              <button class="seg-item" data-mode="excel" onclick="Subsidy.toggleImportMode('excel')">Excel导入</button>
+            </div>
+          </div>
+          <div id="sbManualBox">
+            <p class="text-muted text-small mb-8">从学生名单中选择并填入金额</p>
+            <div id="sbStudentList" style="max-height:300px;overflow-y:auto;">
+              ${students.map(s => `
+                <div class="flex gap-8 mb-8" style="align-items:center;">
+                  <span style="width:90px;font-size:0.85rem;">${escapeHtml(s.name)}</span>
+                  <input type="number" placeholder="金额" data-stuid="${s.id}" style="flex:1;padding:6px;border:1px solid var(--gray-3);border-radius:6px;">
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          <div id="sbExcelBox" class="hidden">
+            <p class="text-muted text-small mb-8">Excel需包含列：学号/姓名/金额</p>
+            <input type="file" id="sbExcelFile" accept=".xlsx,.xls" class="btn btn-outline btn-block">
+            <div id="sbExcelPreview"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="sbImportBtn">创建签字任务</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    let importMode = 'manual';
+    let excelData = null;
+    window._subsidyImportMode = (m) => {
+      importMode = m;
+      overlay.querySelectorAll('.seg-item').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+      overlay.querySelector('#sbManualBox').classList.toggle('hidden', m !== 'manual');
+      overlay.querySelector('#sbExcelBox').classList.toggle('hidden', m !== 'excel');
+    };
+    this.toggleImportMode = window._subsidyImportMode;
+    overlay.querySelector('#sbExcelFile').onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const data = await this.parseExcel(file);
+      excelData = data;
+      const preview = overlay.querySelector('#sbExcelPreview');
+      preview.innerHTML = `<p class="text-small text-success">已解析 ${data.length} 条记录</p>`;
+    };
+    overlay.querySelector('#sbImportBtn').onclick = () => {
+      const title = overlay.querySelector('#sbTitle').value.trim();
+      const deadline = overlay.querySelector('#sbDeadline').value;
+      if (!title) { toast('请填写标题'); return; }
+      if (!deadline) { toast('请设置截止时间'); return; }
+      let items = [];
+      if (importMode === 'manual') {
+        const inputs = overlay.querySelectorAll('#sbStudentList input');
+        inputs.forEach(inp => {
+          const val = parseFloat(inp.value);
+          if (!isNaN(val) && val > 0) items.push({ stuId: inp.dataset.stuid, amount: val });
+        });
+        if (!items.length) { toast('请至少填入一条金额'); return; }
+      } else {
+        if (!excelData?.length) { toast('请先导入Excel'); return; }
+        items = excelData;
+      }
+      const list = this.getList();
+      const t = {
+        id: uid(), title, deadline: new Date(deadline).toISOString(),
+        items, signs: [], creator: u.name, createdAt: now(),
+      };
+      list.push(t);
+      this.save(list);
+      Store.addLog(u.name, u.role, '导入补助明细', t.id);
+      overlay.remove();
+      toast('签字任务已创建');
+      this.renderList();
+    };
+  },
+
+  async parseExcel(file) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wb = XLSX.read(e.target.result, { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+        const items = [];
+        rows.forEach(r => {
+          const stuNo = String(r['学号'] || r['学号 '] || r.stuNo || '').trim();
+          const name = String(r['姓名'] || r.name || '').trim();
+          const amount = parseFloat(r['金额'] || r.amount || 0);
+          if (!stuNo && !name) return;
+          let stu = Store.getStudentByStuNo(stuNo);
+          if (!stu && name) stu = Store.getStudents().find(s => s.name === name);
+          if (stu && !isNaN(amount)) items.push({ stuId: stu.id, amount });
+        });
+        resolve(items);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  },
+
+  showSign(taskId) {
+    const u = Auth.current();
+    if (u.role !== 'student') { toast('仅学生可签字'); return; }
+    const t = this.getList().find(x => x.id === taskId);
+    if (!t) return;
+    if (isExpired(t.deadline)) { toast('已截止，无法签字'); return; }
+    const myItem = t.items.find(i => i.stuId === u.id);
+    if (!myItem) { toast('您不在本补助名单中'); return; }
+    const mySign = t.signs.find(s => s.stuId === u.id);
+    if (mySign && mySign.valid !== false) { toast('您已签字'); return; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>电子签字</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="detail-row"><span class="dr-label">姓名</span><span class="dr-value">${escapeHtml(u.name)}</span></div>
+          <div class="detail-row"><span class="dr-label">学号</span><span class="dr-value">${escapeHtml(u.stuNo)}</span></div>
+          <div class="detail-row"><span class="dr-label">补助金额</span><span class="dr-value">¥${myItem.amount}</span></div>
+          <div class="mt-8 text-small text-muted">请在下方手写签名确认（本人签字，禁止代签）：</div>
+          <div class="sign-canvas-wrap">
+            <canvas id="signCanvas" width="280" height="140" style="width:100%;background:#fafafa;border-radius:6px;"></canvas>
+          </div>
+          <div class="flex gap-8">
+            <button class="btn btn-sm btn-gray" onclick="clearSignCanvas()">清除重写</button>
+          </div>
+          <p class="text-small text-danger mt-8">⚠ 代签、冒签一经发现，记录直接作废</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="sbSignBtn">确认签字</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    initSignCanvas(overlay.querySelector('#signCanvas'));
+    overlay.querySelector('#sbSignBtn').onclick = () => {
+      const signData = getSignData();
+      if (!signData) { toast('请先手写签名'); return; }
+      const list = this.getList();
+      const t2 = list.find(x => x.id === taskId);
+      // 移除旧的作废签字（如果有）
+      t2.signs = t2.signs.filter(s => s.stuId !== u.id);
+      t2.signs.push({
+        stuId: u.id, name: u.name,
+        sign: signData, time: now(),
+        device: getDeviceFingerprint(), valid: true,
+      });
+      this.save(list);
+      Store.addLog(u.name, 'student', '补助电子签字', t2.id);
+      overlay.remove();
+      toast('签字成功');
+      this.renderDetail(taskId);
+    };
+  },
+
+  invalidate(taskId, stuId) {
+    const u = Auth.current();
+    if (u.role !== 'monitor') { toast('无权限'); return; }
+    const list = this.getList();
+    const t = list.find(x => x.id === taskId);
+    const s = t.signs.find(x => x.stuId === stuId);
+    if (!s) return;
+    promptDialog('作废原因', '请输入作废原因（如代签）').then(reason => {
+      if (!reason) return;
+      s.valid = false;
+      s.invalidReason = reason;
+      s.invalidBy = u.name;
+      s.invalidTime = now();
+      this.save(list);
+      const stu = Store.getStudent(stuId);
+      Store.addLog(u.name, u.role, `作废签字(${reason})`, `${taskId}/${stuId}`);
+      toast('已作废该签字');
+      this.renderDetail(taskId);
+    });
+  },
+
+  export(taskId) {
+    const u = Auth.current();
+    if (u.role !== 'monitor' && u.role !== 'teacher') { toast('无权限'); return; }
+    const t = this.getList().find(x => x.id === taskId);
+    if (!t) return;
+    const data = t.items.map(item => {
+      const stu = Store.getStudent(item.stuId);
+      const sign = t.signs.find(s => s.stuId === item.stuId);
+      return {
+        '学号': stu?.stuNo || '',
+        '姓名': stu?.name || '',
+        '补助金额': item.amount,
+        '签字状态': sign?.valid === false ? '无效' : (sign ? '已签' : '未签'),
+        '签字时间': sign ? fmtDate(sign.time, true) : '',
+        '作废原因': sign?.invalidReason || '',
+        '作废人': sign?.invalidBy || '',
+      };
+    });
+    downloadExcel(`补助签字_${t.title}_${todayStr()}.xlsx`, data, '补助签字');
+    Store.addLog(u.name, u.role, '导出补助签字', t.id);
+    toast('已导出');
+  },
+};
+
+// 手写签字canvas
+let _signCtx = null;
+let _signDrawing = false;
+let _signHasContent = false;
+function initSignCanvas(canvas) {
+  const ctx = canvas.getContext('2d');
+  _signCtx = ctx;
+  _signHasContent = false;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = '#2c3e50';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  let lastX = 0, lastY = 0;
+  const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const t = e.touches ? e.touches[0] : e;
+    return { x:(t.clientX - rect.left)*scale, y:(t.clientY - rect.top)*scale };
+  };
+  const start = (e) => { e.preventDefault(); const p=getPos(e); lastX=p.x; lastY=p.y; _signDrawing=true; _signHasContent=true; };
+  const move = (e) => {
+    if (!_signDrawing) return; e.preventDefault();
+    const p = getPos(e);
+    ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(p.x,p.y); ctx.stroke();
+    lastX=p.x; lastY=p.y;
+  };
+  const end = () => { _signDrawing = false; };
+  canvas.onmousedown = start; canvas.onmousemove = move; canvas.onmouseup = end; canvas.onmouseleave = end;
+  canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+}
+function clearSignCanvas() {
+  const c = $('#signCanvas'); if (!c) return;
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+  _signHasContent = false;
+}
+function getSignData() {
+  if (!_signHasContent) return null;
+  const c = $('#signCanvas');
+  return c.toDataURL('image/png');
+}
+function getDeviceFingerprint() {
+  const nav = navigator;
+  return btoa([
+    nav.userAgent, nav.language, screen.width+'x'+screen.height,
+    new Date().getTimezoneOffset(), nav.hardwareConcurrency||0,
+  ].join('|')).slice(0,32);
+}
+
+// ============================================================
+// 模块3：学费住宿费缴费核对
+// ============================================================
+const Tuition = {
+  getList() { return Store.get('tuitions', []); },
+  save(list) { Store.set('tuitions', list); },
+  getRecord(stuId) { return this.getList().find(t => t.stuId === stuId); },
+
+  // 缴费规则引擎
+  calcPayable(loanAmount) {
+    const cfg = Store.getConfig();
+    const loan = Number(loanAmount) || 0;
+    if (loan >= cfg.tuitionFull) return { payable: 0, type: '免缴', desc: '贷款≥5800，无需缴费' };
+    if (loan <= 0) return { payable: cfg.tuitionFull, type: '全额', desc: '未申请贷款，全额缴费5800' };
+    return { payable: cfg.tuitionFee, type: '可选', desc: '贷款<5800，可缴学费5000或住宿费800', optional: true };
+  },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    const app = $('#app');
+    if (u.role === 'student') {
+      this.renderStudentView(u);
+    } else {
+      this.renderManageView(u);
+    }
+  },
+
+  renderStudentView(u) {
+    let t = this.getRecord(u.id);
+    if (!t) {
+      // 自动初始化（学生首次进入）
+      t = { stuId:u.id, loanAmount:0, payable:this.calcPayable(0).payable, qrcode:'', paidProof:'', paidStatus:'unpaid', createdAt:now() };
+      const list = this.getList();
+      list.push(t);
+      this.save(list);
+    }
+    const cfg = Store.getConfig();
+    const rule = this.calcPayable(t.loanAmount);
+    const qr = Store.get('tuitionQrcode', '');
+    const app = $('#app');
+    let statusTag = '';
+    if (t.paidStatus === 'confirmed') statusTag = '<span class="tag tag-success">已确认</span>';
+    else if (t.paidProof) statusTag = '<span class="tag tag-warning">待核对</span>';
+    else if (rule.payable === 0) statusTag = '<span class="tag tag-info">无需缴费</span>';
+    else statusTag = '<span class="tag tag-danger">未缴费</span>';
+
+    app.innerHTML = `
+      ${renderTopbar('缴费核对', 'workbench')}
+      <div class="page page-with-nav">
+        <div class="card">
+          <div class="card-header">缴费状态 ${statusTag}</div>
+          <div class="card-body">
+            <div class="detail-row"><span class="dr-label">姓名</span><span class="dr-value">${escapeHtml(u.name)}</span></div>
+            <div class="detail-row"><span class="dr-label">学号</span><span class="dr-value">${escapeHtml(u.stuNo)}</span></div>
+            <div class="detail-row"><span class="dr-label">贷款金额</span><span class="dr-value">¥${t.loanAmount || 0}</span></div>
+            <div class="detail-row"><span class="dr-label">应缴金额</span><span class="dr-value text-danger fw-600">¥${rule.payable}</span></div>
+            <div class="detail-row"><span class="dr-label">缴费类型</span><span class="dr-value">${rule.desc}</span></div>
+            ${t.paidProof ? `<div class="detail-row"><span class="dr-label">缴费凭证</span><span class="dr-value"><img src="${t.paidProof}" style="max-width:150px;border-radius:6px;"></span></div>`:''}
+            ${t.checker ? `<div class="detail-row"><span class="dr-label">核对人</span><span class="dr-value">${escapeHtml(t.checker)} · ${fmtDate(t.checkTime,true)}</span></div>`:''}
+            ${t.remark ? `<div class="detail-row"><span class="dr-label">备注</span><span class="dr-value">${escapeHtml(t.remark)}</span></div>`:''}
+          </div>
+        </div>
+        ${rule.payable > 0 && t.paidStatus !== 'confirmed' ? `
+          ${qr ? `<div class="card"><div class="card-header">缴费二维码</div><div class="card-body qr-display"><img src="${qr}" style="width:200px;"></div></div>`:''}
+          <div class="card">
+            <div class="card-header">提交缴费凭证</div>
+            <div class="card-body">
+              ${t.paidProof ? '<p class="text-small text-success mb-8">已提交凭证，等待班长核对</p>' : '<p class="text-small text-muted mb-8">请缴费后截图上传凭证</p>'}
+              <input type="file" id="tuProof" accept="image/*" class="btn btn-outline btn-block mb-8">
+              <button class="btn btn-primary btn-block" onclick="Tuition.uploadProof()">提交凭证</button>
+            </div>
+          </div>
+        ` : (rule.payable === 0 ? '<div class="card"><div class="card-body text-center text-success">您无需缴费</div></div>' : '')}
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  async uploadProof() {
+    const u = Auth.current();
+    const file = $('#tuProof').files[0];
+    if (!file) { toast('请选择凭证图片'); return; }
+    if (file.size > 3*1024*1024) { toast('图片超过3MB'); return; }
+    const data = await fileToBase64(file);
+    const list = this.getList();
+    let t = list.find(x => x.stuId === u.id);
+    if (!t) { t = { stuId:u.id, loanAmount:0, payable:0, paidStatus:'unpaid', createdAt:now() }; list.push(t); }
+    t.paidProof = data;
+    t.paidStatus = 'pending';
+    t.proofTime = now();
+    this.save(list);
+    Store.addLog(u.name, 'student', '提交缴费凭证', u.id);
+    toast('凭证已提交');
+    this.renderList();
+  },
+
+  renderManageView(u) {
+    const students = Store.getStudents();
+    const tuitions = this.getList();
+    const qr = Store.get('tuitionQrcode', '');
+    let stats = { total:students.length, confirmed:0, pending:0, unpaid:0, exempt:0 };
+    students.forEach(s => {
+      const t = tuitions.find(x => x.stuId === s.id);
+      if (!t) { stats.unpaid++; return; }
+      const rule = this.calcPayable(t.loanAmount);
+      if (t.paidStatus === 'confirmed') stats.confirmed++;
+      else if (t.paidProof) stats.pending++;
+      else if (rule.payable === 0) stats.exempt++;
+      else stats.unpaid++;
+    });
+
+    $('#app').innerHTML = `
+      ${renderTopbar('缴费核对', 'workbench', `<button class="btn-action" onclick="Tuition.showManage()">管理</button>`)}
+      <div class="page page-with-nav">
+        <div class="stat-grid">
+          <div class="stat-card"><div class="sc-num">${stats.confirmed}</div><div class="sc-label">已确认</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.pending}</div><div class="sc-label">待核对</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.unpaid}</div><div class="sc-label">未缴费</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.exempt}</div><div class="sc-label">免缴</div></div>
+        </div>
+        <div class="search-bar"><input type="search" id="searchTuition" placeholder="搜索学生姓名/学号" oninput="Tuition.filterManage(this.value)"></div>
+        <div id="tuitionManageList">${this.renderManageItems(students, tuitions, '')}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderManageItems(students, tuitions, kw) {
+    const filtered = kw ? students.filter(s => s.name.includes(kw) || s.stuNo.includes(kw)) : students;
+    if (!filtered.length) return emptyState('暂无学生');
+    return filtered.map(s => {
+      const t = tuitions.find(x => x.stuId === s.id) || { paidStatus:'unpaid', loanAmount:0 };
+      const rule = this.calcPayable(t.loanAmount);
+      let tag = '';
+      if (t.paidStatus === 'confirmed') tag = '<span class="tag tag-success">已确认</span>';
+      else if (t.paidProof) tag = '<span class="tag tag-warning">待核对</span>';
+      else if (rule.payable === 0) tag = '<span class="tag tag-info">免缴</span>';
+      else tag = '<span class="tag tag-danger">未缴费</span>';
+      return `
+        <div class="card" onclick="Tuition.showStudentDetail('${s.id}')">
+          <div class="card-body">
+            <div class="flex-between">
+              <div>
+                <div class="li-title">${escapeHtml(s.name)} <span class="text-muted text-small">${escapeHtml(s.stuNo)}</span></div>
+                <div class="li-meta">贷款 ¥${t.loanAmount||0} · 应缴 ¥${rule.payable}</div>
+              </div>
+              ${tag}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  filterManage(kw) {
+    $('#tuitionManageList').innerHTML = this.renderManageItems(Store.getStudents(), this.getList(), kw);
+  },
+
+  showStudentDetail(stuId) {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const s = Store.getStudent(stuId);
+    const list = this.getList();
+    let t = list.find(x => x.stuId === stuId);
+    if (!t) { t = { stuId, loanAmount:0, paidStatus:'unpaid', createdAt:now() }; list.push(t); this.save(list); }
+    const rule = this.calcPayable(t.loanAmount);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>${escapeHtml(s.name)} - 缴费详情</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>助学贷款金额</label><input type="number" id="tdLoan" value="${t.loanAmount||0}" placeholder="0表示未申请"></div>
+          <div class="detail-row"><span class="dr-label">应缴金额</span><span class="dr-value text-danger fw-600">¥${rule.payable}</span></div>
+          <div class="detail-row"><span class="dr-label">缴费类型</span><span class="dr-value">${rule.desc}</span></div>
+          <div class="detail-row"><span class="dr-label">凭证状态</span><span class="dr-value">${t.paidProof?'已提交':'未提交'}</span></div>
+          ${t.paidProof ? `<div class="detail-row"><span class="dr-label">凭证图片</span><span class="dr-value"><img src="${t.paidProof}" style="max-width:150px;border-radius:6px;"></span></div>`:''}
+          <div class="form-group"><label>备注（异常登记）</label><input type="text" id="tdRemark" value="${escapeHtml(t.remark||'')}" placeholder="如信息错误、贷款异常"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+          <button class="btn btn-outline" style="flex:1;" id="tdSaveLoan">保存贷款</button>
+          ${t.paidProof && t.paidStatus !== 'confirmed' ? `<button class="btn btn-primary" style="flex:1;" id="tdConfirm">确认缴费</button>`:''}
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    overlay.querySelector('#tdSaveLoan').onclick = () => {
+      const loan = parseFloat(overlay.querySelector('#tdLoan').value) || 0;
+      const remark = overlay.querySelector('#tdRemark').value.trim();
+      const list2 = this.getList();
+      const t2 = list2.find(x => x.stuId === stuId);
+      t2.loanAmount = loan;
+      t2.remark = remark;
+      const r = this.calcPayable(loan);
+      t2.payable = r.payable;
+      this.save(list2);
+      Store.addLog(u.name, u.role, '修改缴费信息', stuId);
+      toast('已保存');
+      overlay.remove();
+      this.renderList();
+    };
+    if (overlay.querySelector('#tdConfirm')) {
+      overlay.querySelector('#tdConfirm').onclick = () => {
+        const list2 = this.getList();
+        const t2 = list2.find(x => x.stuId === stuId);
+        t2.paidStatus = 'confirmed';
+        t2.checker = u.name;
+        t2.checkTime = now();
+        this.save(list2);
+        Store.addLog(u.name, u.role, '确认缴费', stuId);
+        toast('已确认');
+        overlay.remove();
+        this.renderList();
+      };
+    }
+  },
+
+  showManage() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const qr = Store.get('tuitionQrcode', '');
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>缴费管理</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>班级缴费二维码（学生可见）</label><input type="file" id="mgQr" accept="image/*"></div>
+          ${qr ? `<div class="text-center mb-8"><img src="${qr}" style="max-width:180px;border-radius:6px;"></div>`:''}
+          <button class="btn btn-outline btn-block mb-12" onclick="Tuition.uploadQr()">上传二维码</button>
+          <button class="btn btn-primary btn-block" onclick="Tuition.export()">导出全班缴费台账</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    this._qrInput = overlay.querySelector('#mgQr');
+  },
+
+  async uploadQr() {
+    const file = this._qrInput?.files[0];
+    if (!file) { toast('请选择图片'); return; }
+    const data = await fileToBase64(file);
+    Store.set('tuitionQrcode', data);
+    Store.addLog(Auth.current().name, Auth.current().role, '上传缴费二维码');
+    toast('已上传');
+    this.showManage();
+    const overlay = $('.modal-overlay');
+    if (overlay) overlay.remove();
+  },
+
+  export() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const students = Store.getStudents();
+    const tuitions = this.getList();
+    const data = students.map(s => {
+      const t = tuitions.find(x => x.stuId === s.id) || {};
+      const rule = this.calcPayable(t.loanAmount);
+      let status = '未缴费';
+      if (t.paidStatus === 'confirmed') status = '已确认';
+      else if (t.paidProof) status = '待核对';
+      else if (rule.payable === 0) status = '免缴';
+      return {
+        '学号': s.stuNo,
+        '姓名': s.name,
+        '贷款金额': t.loanAmount || 0,
+        '应缴金额': rule.payable,
+        '缴费类型': rule.type,
+        '缴费状态': status,
+        '核对人': t.checker || '',
+        '核对时间': t.checkTime ? fmtDate(t.checkTime, true) : '',
+        '备注': t.remark || '',
+      };
+    });
+    downloadExcel(`缴费台账_${todayStr()}.xlsx`, data, '缴费核对');
+    Store.addLog(u.name, u.role, '导出缴费台账');
+    toast('已导出');
+  },
+};
+
+// 路由注册
 Router.register('subsidy', () => Subsidy.renderList());
 Router.register('subsidy/detail', (p) => Subsidy.renderDetail(p[0]));
-/* ========== 补助签字确认模块 ========== */
-function renderSubsidy() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderSubsidyStudent();
-    return renderSubsidyManager();
-    
-    function renderSubsidyStudent() {
-        const my = getMySubsidy();
-        const items = getSubsidyItems();
-        const sid = currentUser ? currentUser.id : '';
-        const myItems = items.filter(function(it){ return it.stuId === sid; });
-        const totalAmt = myItems.reduce(function(s,it){ return s + (Number(it.amount)||0); }, 0);
-        const signedCount = myItems.filter(function(it){ return it.signed; }).length;
-        
-        return `
-        <div class="page subsidy-page">
-            <div class="page-head">
-                <h2>补助签字确认</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            
-            ${my ? `<div class="card tip-card">
-                <div class="card-title">我的补助资格</div>
-                <p class="tip-text">${escapeHtml(my.reason || '暂无说明')}</p >
-            </div>` : ''}
-            
-            <div class="card stat-card">
-                <div class="stat-num">${myItems.length}</div>
-                <div class="stat-label">我的补助项目</div>
-                <div class="stat-sub">已签字 ${signedCount} / ${myItems.length} 项</div>
-            </div>
-            
-            <div class="card">
-                <div class="card-title">补助明细（合计 ¥${totalAmt.toFixed(2)}）</div>
-                ${myItems.length === 0 ? `<p class="empty">暂无可签字的补助项目</p >` : myItems.map(function(it){
-                    const signed = it.signed;
-                    return `<div class="subsidy-item ${signed?'signed':''}">
-                        <div class="subsidy-info">
-                            <div class="subsidy-name">${escapeHtml(it.name)}</div>
-                            <div class="subsidy-amount">¥${(Number(it.amount)||0).toFixed(2)}</div>
-                            <div class="subsidy-meta">${escapeHtml(it.category||'')}${it.note?' · '+escapeHtml(it.note):''}</div>
-                        </div>
-                        <div class="subsidy-act">
-                            ${signed 
-                                ? `<span class="badge ok">已签字</span>
-                                   <button class="btn mini ghost" onclick="confirmUnsignSubsidy('${it.id}')">撤销</button>`
-                                : `<button class="btn mini primary" onclick="signSubsidy('${it.id}')">电子签字</button>`}
-                        </div>
-                    </div>`;
-                }).join('')}
-            </div>
-            <div class="safe-note">🔒 每项补助需本人电子签字确认，防止代签冒签，操作全程留痕</div>
-        </div>`;
-    }
-    
-    function renderSubsidyManager() {
-        const items = getSubsidyItems();
-        const students = getStudentList();
-        const stats = getSubsidyStats();
-        return `
-        <div class="page subsidy-page">
-            <div class="page-head">
-                <h2>补助签字确认</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            
-            <div class="card stat-card">
-                <div class="stat-num">${items.length}</div>
-                <div class="stat-label">补助项目数</div>
-                <div class="stat-sub">覆盖 ${stats.studentCount} 人，已签 ${stats.signedCount} 人次</div>
-            </div>
-            
-            ${isLeader ? `<button class="btn primary full" onclick="showSubsidyForm()">＋ 发布补助项目</button>` : ''}
-            
-            <div class="card">
-                <div class="card-title">补助项目列表</div>
-                ${items.length === 0 ? `<p class="empty">暂无补助项目</p >` : items.map(function(it){
-                    const signedNum = (it.signedStuIds||[]).length;
-                    return `<div class="subsidy-item ${signedNum>=it.stuIds.length?'signed':''}">
-                        <div class="subsidy-info">
-                            <div class="subsidy-name">${escapeHtml(it.name)}</div>
-                            <div class="subsidy-amount">¥${(Number(it.amount)||0).toFixed(2)}</div>
-                            <div class="subsidy-meta">${escapeHtml(it.category||'')} · 需签 ${it.stuIds.length} 人 · 已签 ${signedNum} 人</div>
-                        </div>
-                        <button class="btn mini ghost" onclick="router.go('subsidy/detail/${it.id}')">详情</button>
-                    </div>`;
-                }).join('')}
-            </div>
-            <div class="safe-note">🔒 签字数据实时统计，未签学生可一键查看提醒</div>
-        </div>`;
-    }
-}
-/* 补助详情页（管理端） */
-function renderSubsidyDetail(id) {
-    const it = store.data.subsidyItems ? store.data.subsidyItems.find(function(x){ return x.id === id; }) : null;
-    if (!it) return `<div class="page"><p class="empty">未找到该补助项目</p ></div>`;
-    const students = getStudentList();
-    const signedNum = (it.signedStuIds||[]).length;
-    return `
-    <div class="page subsidy-page">
-        <div class="page-head">
-            <h2>补助详情</h2>
-            <button class="icon-btn" onclick="router.go('subsidy')">←</button>
+Router.register('tuition', () => Tuition.renderList());
+
+// ============================================================
+// 模块4：考勤管理
+// ============================================================
+const Attendance = {
+  getList() { return Store.get('attendances', []); },
+  save(list) { Store.set('attendances', list); },
+  STATUSES: {
+    present: { label:'到课', tag:'tag-success' },
+    absent: { label:'缺勤', tag:'tag-danger' },
+    late: { label:'迟到', tag:'tag-warning' },
+    early: { label:'早退', tag:'tag-warning' },
+    leave: { label:'请假', tag:'tag-info' },
+  },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    if (u.role === 'student') this.renderStudentView(u);
+    else this.renderManageView(u);
+  },
+
+  renderStudentView(u) {
+    const list = this.getList();
+    const myRecords = [];
+    list.forEach(d => {
+      d.records.forEach(r => {
+        if (r.stuId === u.id) myRecords.push({ date:d.date, type:d.type, ...r });
+      });
+    });
+    myRecords.sort((a,b) => b.date.localeCompare(a.date));
+    const stats = { present:0, absent:0, late:0, early:0, leave:0 };
+    myRecords.forEach(r => { if (stats[r.status] !== undefined) stats[r.status]++; });
+
+    $('#app').innerHTML = `
+      ${renderTopbar('我的考勤', 'workbench')}
+      <div class="page page-with-nav">
+        <div class="stat-grid">
+          <div class="stat-card"><div class="sc-num">${stats.absent}</div><div class="sc-label">缺勤</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.late}</div><div class="sc-label">迟到</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.early}</div><div class="sc-label">早退</div></div>
+          <div class="stat-card"><div class="sc-num">${stats.leave}</div><div class="sc-label">请假</div></div>
         </div>
         <div class="card">
-            <div class="card-title">${escapeHtml(it.name)}</div>
-            <p class="detail-line">金额：¥${(Number(it.amount)||0).toFixed(2)}</p >
-            <p class="detail-line">类别：${escapeHtml(it.category||'')}</p >
-            <p class="detail-line">已签：${signedNum} / ${it.stuIds.length} 人</p >
-            ${it.note?`<p class="detail-line">备注：${escapeHtml(it.note)}</p >`:''}
+          <div class="card-header">考勤记录</div>
+          <div class="card-body" style="padding:0;">
+            ${myRecords.length ? myRecords.map(r => `
+              <div class="list-item">
+                <div class="li-main">
+                  <div class="li-title">${r.date} ${r.type==='class'?'课堂':'晚自习'}</div>
+                  <div class="li-meta">${this.STATUSES[r.status]?.label || r.status} ${r.remark?'· '+escapeHtml(r.remark):''}</div>
+                </div>
+                <span class="tag ${this.STATUSES[r.status]?.tag || ''}">${this.STATUSES[r.status]?.label || r.status}</span>
+              </div>
+            `).join('') : emptyState('暂无考勤记录')}
+          </div>
         </div>
-        <div class="card">
-            <div class="card-title">签字进度</div>
-            ${it.stuIds.map(function(sid){
-                const st = students.find(function(s){ return s.id === sid; });
-                const name = st ? st.name : sid;
-                const signed = (it.signedStuIds||[]).indexOf(sid) !== -1;
-                const sig = it.signs && it.signs[sid];
-                return `<div class="sign-row">
-                    <span class="sign-name">${escapeHtml(name)}</span>
-                    ${signed 
-                        ? `<span class="badge ok">已签 ${sig && sig.time ? fmtTime(sig.time) : ''}</span>`
-                        : `<span class="badge warn">未签</span>`}
-                </div>`;
-            }).join('')}
-        </div>
-    </div>`;
-}
-
-function getMySubsidy() {
-    if (!currentUser) return null;
-    const list = store.data.subsidyQuals || [];
-    return list.find(function(q){ return q.stuId === currentUser.id; }) || null;
-}
-
-function getSubsidyItems() {
-    return store.data.subsidyItems || [];
-}
-
-function getSubsidyStats() {
-    const items = getSubsidyItems();
-    let studentCount = 0, signedCount = 0;
-    items.forEach(function(it){
-        studentCount += (it.stuIds||[]).length;
-        signedCount += (it.signedStuIds||[]).length;
-    });
-    return { studentCount: studentCount, signedCount: signedCount };
-}
-
-function showSubsidyForm() {
-    const students = getStudentList();
-    openModal(`
-        <h3>发布补助项目</h3>
-        <div class="field"><label>项目名称</label><input id="sf-name" placeholder="如：国家助学金" /></div>
-        <div class="field"><label>金额（元）</label><input id="sf-amount" type="number" step="0.01" placeholder="如：2000" /></div>
-        <div class="field"><label>类别</label><select id="sf-cat">
-            <option>国家助学金</option><option>校内补助</option><option>困难补助</option><option>其他</option>
-        </select></div>
-        <div class="field"><label>备注</label><input id="sf-note" placeholder="选填" /></div>
-        <div class="field"><label>适用学生（${students.length}人，默认全选）</label>
-            <div class="check-scroll">
-                ${students.map(function(s,i){
-                    return `<label class="check-row"><input type="checkbox" class="sf-stu" value="${s.id}" checked /> ${escapeHtml(s.name)}（${escapeHtml(s.studentNo||'')}）</label>`;
-                }).join('')}
-            </div>
-        </div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveSubsidy()">发布</button>
-        </div>
-    `);
-}
-
-function saveSubsidy() {
-    const name = val('sf-name'); const amount = Number(val('sf-amount'));
-    if (!name || !amount) return toast('请填写项目名称和金额');
-    const stuIds = Array.from(document.querySelectorAll('.sf-stu:checked')).map(function(c){ return c.value; });
-    if (!stuIds.length) return toast('请至少选择一名学生');
-    const item = {
-        id: 'sub' + Date.now(),
-        name: name, amount: amount,
-        category: val('sf-cat'), note: val('sf-note'),
-        stuIds: stuIds, signedStuIds: [], signs: {},
-        createBy: currentUser ? currentUser.id : '', createName: currentUser ? currentUser.name : '',
-        createTime: Date.now(), locked: false
-    };
-    store.data.subsidyItems = store.data.subsidyItems || [];
-    store.data.subsidyItems.unshift(item);
-    addLog('发布补助项目', name + ' ¥' + amount, 'subsidy');
-    pushNotify('补助通知', '新补助项目「' + name + '」已发布，请相关同学签字确认', 'subsidy');
-    closeModal();
-    toast('补助项目已发布');
-    router.render();
-}
-
-function signSubsidy(id) {
-    if (!currentUser) return toast('请先登录');
-    const item = (store.data.subsidyItems||[]).find(function(x){ return x.id === id; });
-    if (!item) return toast('未找到该项目');
-    if (item.locked) return toast('该项目已锁定，无法签字');
-    if ((item.signedStuIds||[]).indexOf(currentUser.id) !== -1) return toast('您已签字');
-    openSignModal(function(base64){
-        item.signedStuIds = item.signedStuIds || [];
-        item.signs = item.signs || {};
-        item.signedStuIds.push(currentUser.id);
-        item.signs[currentUser.id] = { sig: base64, time: Date.now(), name: currentUser.name };
-        addLog('补助电子签字', item.name, 'subsidy', currentUser);
-        pushNotify('补助签字', currentUser.name + ' 已对「' + item.name + '」签字确认', 'subsidy');
-        store.save();
-        toast('签字成功');
-        router.render();
-    });
-}
-
-function confirmUnsignSubsidy(id) {
-    if (!currentUser) return;
-    if (!confirm('确定撤销对「补助」的签字吗？')) return;
-    const item = (store.data.subsidyItems||[]).find(function(x){ return x.id === id; });
-    if (!item) return;
-    if (item.locked) return toast('该项目已锁定，无法撤销');
-    item.signedStuIds = (item.signedStuIds||[]).filter(function(s){ return s !== currentUser.id; });
-    if (item.signs) delete item.signs[currentUser.id];
-    addLog('撤销补助签字', item.name, 'subsidy');
-    store.save(); toast('已撤销签字'); router.render();
-}
-
-/* 电子签字弹窗（通用） */
-function openSignModal(cb) {
-    const wrap = document.createElement('div');
-    wrap.className = 'sign-modal';
-    wrap.innerHTML = `
-        <div class="sign-box">
-            <h3>电子签字确认</h3>
-            <p class="sign-tip">请在本区域手写签名（用手指或鼠标书写）</p >
-            <canvas id="sign-canvas" width="300" height="120"></canvas>
-            <div class="modal-btns">
-                <button class="btn ghost" onclick="clearSign()">清除</button>
-                <button class="btn primary" onclick="confirmSign()">确认签字</button>
-            </div>
-        </div>
+      </div>
+      ${renderBottomNav()}
     `;
-    document.body.appendChild(wrap);
-    const cv = wrap.querySelector('#sign-canvas');
-    const ctx = cv.getContext('2d');
-    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#1a4d8f';
-    let drawing = false, hasInk = false;
-    function pos(e){ const r = cv.getBoundingClientRect(); return { x:(e.clientX||e.touches[0].clientX)-r.left, y:(e.clientY||e.touches[0].clientY)-r.top }; }
-    cv.addEventListener('mousedown', function(e){ drawing = true; hasInk = true; ctx.beginPath(); ctx.moveTo(pos(e).x, pos(e).y); });
-    cv.addEventListener('mousemove', function(e){ if(!drawing)return; ctx.lineTo(pos(e).x, pos(e).y); ctx.stroke(); });
-    cv.addEventListener('mouseup', function(){ drawing = false; });
-    cv.addEventListener('touchstart', function(e){ e.preventDefault(); drawing = true; hasInk = true; ctx.beginPath(); ctx.moveTo(pos(e).x, pos(e).y); });
-    cv.addEventListener('touchmove', function(e){ e.preventDefault(); if(!drawing)return; ctx.lineTo(pos(e).x, pos(e).y); ctx.stroke(); });
-    cv.addEventListener('touchend', function(){ drawing = false; });
-    wrap.dataset.hasInk = 'false';
-    window.__signCb = cb;
-    window.__signCv = cv;
-    window.__signHasInk = function(){ return hasInk; };
-}
+  },
 
-function clearSign() {
-    const cv = window.__signCv;
-    if (!cv) return;
-    const ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, cv.width, cv.height);
-    window.__signHasInk = function(){ return false; };
-}
+  renderManageView(u) {
+    const list = this.getList().sort((a,b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    $('#app').innerHTML = `
+      ${renderTopbar('考勤管理', 'workbench', u.role==='monitor' ? `<button class="btn-action" onclick="Attendance.showRecord()">录入</button>` : '')}
+      <div class="page page-with-nav">
+        <div class="seg-control">
+          <button class="seg-item active" data-type="all" onclick="Attendance.filterType('all')">全部</button>
+          <button class="seg-item" data-type="class" onclick="Attendance.filterType('class')">课堂</button>
+          <button class="seg-item" data-type="evening" onclick="Attendance.filterType('evening')">晚自习</button>
+        </div>
+        <div id="attList">${this.renderManageItems(list, 'all')}</div>
+        ${u.role==='monitor' ? `<button class="btn btn-outline btn-block" style="margin:0 12px;max-width:calc(100% - 24px);" onclick="Attendance.export()">导出考勤表</button>`:''}
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
 
-function confirmSign() {
-    if (!window.__signHasInk || !window.__signHasInk()) return toast('请先手写签名');
-    const cv = window.__signCv;
-    const data = cv.toDataURL('image/png');
-    document.querySelector('.sign-modal').remove();
-    const cb = window.__signCb;
-    window.__signCb = null; window.__signCv = null;
-    if (cb) cb(data);
-}
-/* ========== 学费住宿费缴费核对模块 ========== */
-function renderPayment() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderPaymentStudent();
-    return renderPaymentManager();
-    
-    function renderPaymentStudent() {
-        const sid = currentUser ? currentUser.id : '';
-        const rows = getPaymentRows().filter(function(r){ return r.stuId === sid; });
-        const paidCount = rows.filter(function(r){ return r.paid; }).length;
-        const total = rows.reduce(function(s,r){ return s + (Number(r.amount)||0); }, 0);
-        const paidTotal = rows.filter(function(r){return r.paid;}).reduce(function(s,r){ return s + (Number(r.amount)||0); }, 0);
-        return `
-        <div class="page payment-page">
-            <div class="page-head">
-                <h2>缴费核对</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
+  renderManageItems(list, type) {
+    const filtered = type === 'all' ? list : list.filter(d => d.type === type);
+    if (!filtered.length) return emptyState('暂无考勤记录');
+    return filtered.map(d => {
+      const stats = { present:0, absent:0, late:0, early:0, leave:0 };
+      d.records.forEach(r => { if (stats[r.status] !== undefined) stats[r.status]++; });
+      return `
+        <div class="card" onclick="Attendance.showDetail('${d.id}')">
+          <div class="card-body">
+            <div class="flex-between">
+              <span class="li-title fw-600">${d.date} ${d.type==='class'?'课堂考勤':'晚自习考勤'}</span>
+              <span class="tag tag-gray">${d.records.length}人</span>
             </div>
-            <div class="card stat-card">
-                <div class="stat-num">${paidCount}/${rows.length}</div>
-                <div class="stat-label">已缴费用项</div>
-                <div class="stat-sub">已缴 ¥${paidTotal.toFixed(2)} / 合计 ¥${total.toFixed(2)}</div>
-            </div>
-            <div class="card">
-                <div class="card-title">我的缴费记录</div>
-                ${rows.length === 0 ? `<p class="empty">暂无可核对的缴费项目</p >` : rows.map(function(r){
-                    return `<div class="pay-row ${r.paid?'paid':''}">
-                        <div class="pay-info">
-                            <div class="pay-name">${escapeHtml(r.type)}</div>
-                            <div class="pay-amount">¥${(Number(r.amount)||0).toFixed(2)}</div>
-                            <div class="pay-meta">${r.paid ? ('已缴' + (r.payTime?fmtTime(r.payTime):'') ) : '未缴'}</div>
-                        </div>
-                        ${r.paid ? `<span class="badge ok">已缴</span>` : `<button class="btn mini primary" onclick="confirmMyPay('${r.id}')">我已完成缴费</button>`}
-                    </div>`;
-                }).join('')}
-            </div>
-            <div class="safe-note">🔒 缴费确认由班长核实，全程留痕可查</div>
+            <div class="li-meta">缺勤${stats.absent} 迟到${stats.late} 早退${stats.early} 请假${stats.leave}</div>
+            <div class="li-meta text-muted">录入人：${escapeHtml(d.recorder)}</div>
+          </div>
         </div>`;
-    }
-    
-    function renderPaymentManager() {
-        const rows = getPaymentRows();
-        const students = getStudentList();
-        const paidCount = rows.filter(function(r){ return r.paid; }).length;
-        return `
-        <div class="page payment-page">
-            <div class="page-head">
-                <h2>缴费核对</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${rows.length}</div>
-                <div class="stat-label">缴费记录</div>
-                <div class="stat-sub">已确认 ${paidCount} 条</div>
-            </div>
-            ${isLeader ? `<button class="btn primary full" onclick="showPayForm()">＋ 录入缴费记录</button>` : ''}
-            <div class="card">
-                <div class="card-title">缴费记录列表</div>
-                ${rows.length === 0 ? `<p class="empty">暂无缴费记录</p >` : rows.map(function(r){
-                    const st = students.find(function(s){ return s.id === r.stuId; });
-                    const name = st ? st.name : r.stuId;
-                    return `<div class="pay-row ${r.paid?'paid':''}">
-                        <div class="pay-info">
-                            <div class="pay-name">${escapeHtml(r.type)} · ${escapeHtml(name)}</div>
-                            <div class="pay-amount">¥${(Number(r.amount)||0).toFixed(2)}</div>
-                            <div class="pay-meta">${r.paid ? '已确认 ' + fmtTime(r.payTime) : '未缴'}</div>
-                        </div>
-                        ${r.paid 
-                            ? `<span class="badge ok">已缴</span>`
-                            : (isLeader ? `<button class="btn mini primary" onclick="confirmPay('${r.id}')">确认已缴</button>` : `<span class="badge warn">未缴</span>`)}
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-}
+    }).join('');
+  },
 
-function getPaymentRows() { return store.data.paymentRows || []; }
+  filterType(type) {
+    $$('.seg-item').forEach(b => b.classList.toggle('active', b.dataset.type === type));
+    const list = this.getList().sort((a,b) => b.date.localeCompare(a.date));
+    $('#attList').innerHTML = this.renderManageItems(list, type);
+  },
 
-function showPayForm() {
-    const students = getStudentList();
-    openModal(`
-        <h3>录入缴费记录</h3>
-        <div class="field"><label>学生</label><select id="pf-stu">
-            ${students.map(function(s){ return `<option value="${s.id}">${escapeHtml(s.name)}（${escapeHtml(s.studentNo||'')}）</option>`; }).join('')}
-        </select></div>
-        <div class="field"><label>费用类型</label><select id="pf-type">
-            <option>学费</option><option>住宿费</option><option>教材费</option><option>其他</option>
-        </select></div>
-        <div class="field"><label>金额（元）</label><input id="pf-amount" type="number" step="0.01" /></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="savePay()">保存</button>
-        </div>
-    `);
-}
-
-function savePay() {
-    const stuId = val('pf-stu'); const type = val('pf-type'); const amount = Number(val('pf-amount'));
-    if (!stuId || !amount) return toast('请选择学生并填写金额');
-    store.data.paymentRows = store.data.paymentRows || [];
-    store.data.paymentRows.unshift({
-        id: 'pay' + Date.now(), stuId: stuId, type: type, amount: amount,
-        paid: false, payTime: null, createBy: currentUser ? currentUser.id : '', createTime: Date.now()
-    });
-    addLog('录入缴费记录', type + ' ¥' + amount, 'payment');
-    store.save(); closeModal(); toast('已录入'); router.render();
-}
-
-function confirmMyPay(id) {
-    if (!currentUser) return;
-    if (!confirm('请确认您已完成该费用缴纳？')) return;
-    const row = (store.data.paymentRows||[]).find(function(r){ return r.id === id; });
-    if (!row) return;
-    if (row.paid) return toast('该记录已确认');
-    row.paid = true; row.payTime = Date.now();
-    addLog('学生确认缴费', row.type + ' ¥' + row.amount, 'payment');
-    pushNotify('缴费确认', currentUser.name + ' 确认完成「' + row.type + '」缴纳，请班长核实', 'payment');
-    store.save(); toast('已登记，待班长核实'); router.render();
-}
-
-function confirmPay(id) {
-    const row = (store.data.paymentRows||[]).find(function(r){ return r.id === id; });
-    if (!row) return;
-    row.paid = true; row.payTime = Date.now();
-    addLog('班长核实缴费', row.type + ' ¥' + row.amount, 'payment');
-    store.save(); toast('已确认'); router.render();
-}
-/* ========== 考勤管理模块 ========== */
-function renderAttendance() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderAttendanceStudent();
-    return renderAttendanceManager();
-    
-    function renderAttendanceStudent() {
-        const sid = currentUser ? currentUser.id : '';
-        const recs = getAttendanceRecs().filter(function(r){ return r.stuId === sid; });
-        const absCount = recs.filter(function(r){ return r.status === '缺勤' || r.status === '迟到'; }).length;
-        const present = recs.filter(function(r){ return r.status === '出勤'; }).length;
-        return `
-        <div class="page att-page">
-            <div class="page-head">
-                <h2>考勤管理</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${present}/${recs.length}</div>
-                <div class="stat-label">出勤记录</div>
-                <div class="stat-sub">缺勤/迟到 ${absCount} 次</div>
-            </div>
-            <div class="card">
-                <div class="card-title">我的考勤记录</div>
-                ${recs.length === 0 ? `<p class="empty">暂无考勤记录</p >` : recs.map(function(r){
-                    const cls = r.status==='出勤'?'ok':(r.status==='迟到'?'warn':'bad');
-                    return `<div class="att-row">
-                        <div class="att-date">${fmtDate(r.date)}</div>
-                        <div class="att-course">${escapeHtml(r.course||'日常考勤')}</div>
-                        <span class="badge ${cls}">${escapeHtml(r.status)}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-    
-    function renderAttendanceManager() {
-        const recs = getAttendanceRecs();
-        const students = getStudentList();
-        const today = todayStr();
-        const todayRecs = recs.filter(function(r){ return r.date === today; });
-        const absToday = todayRecs.filter(function(r){ return r.status === '缺勤'; }).length;
-        return `
-        <div class="page att-page">
-            <div class="page-head">
-                <h2>考勤管理</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${recs.length}</div>
-                <div class="stat-label">累计考勤记录</div>
-                <div class="stat-sub">今日缺勤 ${absToday} 人</div>
-            </div>
-            ${isLeader ? `<button class="btn primary full" onclick="showAttForm()">＋ 录入今日考勤</button>` : ''}
-            <div class="card">
-                <div class="card-title">考勤记录</div>
-                ${recs.length === 0 ? `<p class="empty">暂无考勤记录</p >` : recs.map(function(r){
-                    const st = students.find(function(s){ return s.id === r.stuId; });
-                    const name = st ? st.name : r.stuId;
-                    const cls = r.status==='出勤'?'ok':(r.status==='迟到'?'warn':'bad');
-                    return `<div class="att-row">
-                        <div class="att-date">${fmtDate(r.date)}</div>
-                        <div class="att-course">${escapeHtml(name)} · ${escapeHtml(r.course||'日常考勤')}</div>
-                        <span class="badge ${cls}">${escapeHtml(r.status)}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-            <button class="btn ghost full" onclick="exportAll()">📤 导出全部数据</button>
-        </div>`;
-    }
-}
-
-function getAttendanceRecs() { return store.data.attendanceRecs || []; }
-
-function showAttForm() {
-    const students = getStudentList();
-    const today = todayStr();
-    openModal(`
-        <h3>录入今日考勤</h3>
-        <p class="sign-tip">日期：${today}（自动记录今日，可修改）</p >
-        <div class="field"><label>日期</label><input id="af-date" type="date" value="${today}" /></div>
-        <div class="field"><label>课程/事项</label><input id="af-course" value="日常考勤" /></div>
-        <div class="field"><label>学生考勤（默认出勤，可点击修改）</label>
-            <div class="check-scroll">
-                ${students.map(function(s){
-                    return `<div class="att-line">
-                        <span class="att-name">${escapeHtml(s.name)}（${escapeHtml(s.studentNo||'')}）</span>
-                        <select class="af-status" data-id="${s.id}">
-                            <option value="出勤">出勤</option>
-                            <option value="迟到">迟到</option>
-                            <option value="缺勤">缺勤</option>
-                            <option value="请假">请假</option>
-                        </select>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveAtt()">保存</button>
-        </div>
-    `);
-}
-
-function saveAtt() {
-    const date = val('af-date'); const course = val('af-course') || '日常考勤';
-    if (!date) return toast('请选择日期');
-    // 防重复：同一学生同一天同一课程只能一条
-    store.data.attendanceRecs = (store.data.attendanceRecs||[]).filter(function(r){
-        return !(r.date === date && r.course === course);
-    });
-    document.querySelectorAll('.af-status').forEach(function(sel){
-        const stuId = sel.getAttribute('data-id');
-        const status = sel.value;
-        store.data.attendanceRecs.unshift({
-            id: 'att' + Date.now() + Math.random().toString(36).slice(2,6),
-            date: date, course: course, stuId: stuId, status: status,
-            createBy: currentUser ? currentUser.id : '', createName: currentUser ? currentUser.name : '',
-            createTime: Date.now()
-        });
-    });
-    addLog('录入考勤', date + ' ' + course, 'attendance');
-    pushNotify('考勤通知', date + ' 考勤已录入，请查看', 'attendance');
-    store.save(); closeModal(); toast('考勤已保存'); router.render();
-}
-
-/* 通用工具补充 */
-function todayStr() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function fmtDate(ts) {
-    if (!ts) return '';
-    const d = new Date(ts);
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function fmtTime(ts) {
-    if (!ts) return '';
-    const d = new Date(ts);
-    return String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-}
-/* ========== 考勤管理模块（完整） ========== */
-function renderAttendance() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderAttendanceStudent();
-    return renderAttendanceManager();
-    
-    function renderAttendanceStudent() {
-        const sid = currentUser ? currentUser.id : '';
-        const recs = getAttendanceRecs().filter(function(r){ return r.stuId === sid; });
-        const absCount = recs.filter(function(r){ return r.status === '缺勤' || r.status === '迟到'; }).length;
-        const present = recs.filter(function(r){ return r.status === '出勤'; }).length;
-        return `
-        <div class="page att-page">
-            <div class="page-head">
-                <h2>考勤管理</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${present}/${recs.length}</div>
-                <div class="stat-label">出勤记录</div>
-                <div class="stat-sub">缺勤/迟到 ${absCount} 次</div>
-            </div>
-            <div class="card">
-                <div class="card-title">我的考勤记录</div>
-                ${recs.length === 0 ? `<p class="empty">暂无考勤记录</p >` : recs.map(function(r){
-                    const cls = r.status==='出勤'?'ok':(r.status==='迟到'?'warn':'bad');
-                    return `<div class="att-row">
-                        <div class="att-date">${fmtDate(r.date)}</div>
-                        <div class="att-course">${escapeHtml(r.course||'日常考勤')}</div>
-                        <span class="badge ${cls}">${escapeHtml(r.status)}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-    
-    function renderAttendanceManager() {
-        const recs = getAttendanceRecs();
-        const students = getStudentList();
-        const today = todayStr();
-        const todayRecs = recs.filter(function(r){ return r.date === today; });
-        const absToday = todayRecs.filter(function(r){ return r.status === '缺勤'; }).length;
-        return `
-        <div class="page att-page">
-            <div class="page-head">
-                <h2>考勤管理</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${recs.length}</div>
-                <div class="stat-label">累计考勤记录</div>
-                <div class="stat-sub">今日缺勤 ${absToday} 人</div>
-            </div>
-            ${isLeader ? `<button class="btn primary full" onclick="showAttForm()">＋ 录入今日考勤</button>` : ''}
-            <div class="card">
-                <div class="card-title">考勤记录</div>
-                ${recs.length === 0 ? `<p class="empty">暂无考勤记录</p >` : recs.map(function(r){
-                    const st = students.find(function(s){ return s.id === r.stuId; });
-                    const name = st ? st.name : r.stuId;
-                    const cls = r.status==='出勤'?'ok':(r.status==='迟到'?'warn':'bad');
-                    return `<div class="att-row">
-                        <div class="att-date">${fmtDate(r.date)}</div>
-                        <div class="att-course">${escapeHtml(name)} · ${escapeHtml(r.course||'日常考勤')}</div>
-                        <span class="badge ${cls}">${escapeHtml(r.status)}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-            <button class="btn ghost full" onclick="exportAll()">📤 导出全部数据</button>
-        </div>`;
-    }
-}
-
-function getAttendanceRecs() { return store.data.attendanceRecs || []; }
-
-function showAttForm() {
-    const students = getStudentList();
-    const today = todayStr();
-    openModal(`
-        <h3>录入今日考勤</h3>
-        <p class="sign-tip">日期：${today}（自动记录今日，可修改）</p >
-        <div class="field"><label>日期</label><input id="af-date" type="date" value="${today}" /></div>
-        <div class="field"><label>课程/事项</label><input id="af-course" value="日常考勤" /></div>
-        <div class="field"><label>学生考勤（默认出勤，可点击修改）</label>
-            <div class="check-scroll">
-                ${students.map(function(s){
-                    return `<div class="att-line">
-                        <span class="att-name">${escapeHtml(s.name)}（${escapeHtml(s.studentNo||'')}）</span>
-                        <select class="af-status" data-id="${s.id}">
-                            <option value="出勤">出勤</option>
-                            <option value="迟到">迟到</option>
-                            <option value="缺勤">缺勤</option>
-                            <option value="请假">请假</option>
-                        </select>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveAtt()">保存</button>
-        </div>
-    `);
-}
-
-function saveAtt() {
-    const date = val('af-date'); const course = val('af-course') || '日常考勤';
-    if (!date) return toast('请选择日期');
-    // 防重复：同一学生同一天同一课程只能一条
-    store.data.attendanceRecs = (store.data.attendanceRecs||[]).filter(function(r){
-        return !(r.date === date && r.course === course);
-    });
-    document.querySelectorAll('.af-status').forEach(function(sel){
-        const stuId = sel.getAttribute('data-id');
-        const status = sel.value;
-        store.data.attendanceRecs.unshift({
-            id: 'att' + Date.now() + Math.random().toString(36).slice(2,6),
-            date: date, course: course, stuId: stuId, status: status,
-            createBy: currentUser ? currentUser.id : '', createName: currentUser ? currentUser.name : '',
-            createTime: Date.now()
-        });
-    });
-    addLog('录入考勤', date + ' ' + course, 'attendance');
-    pushNotify('考勤通知', date + ' 考勤已录入，请查看', 'attendance');
-    store.save(); closeModal(); toast('考勤已保存'); router.render();
-}
-
-/* 通用日期工具 */
-function todayStr() {
-    const d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function fmtDate(ts) {
-    if (!ts) return '';
-    const d = new Date(ts);
-    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function fmtTime(ts) {
-    if (!ts) return '';
-    const d = new Date(ts);
-    return String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0') + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-}
-/* ========== 矛盾纠纷调解模块 ========== */
-function renderDispute() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderDisputeStudent();
-    return renderDisputeManager();
-    
-    function renderDisputeStudent() {
-        const sid = currentUser ? currentUser.id : '';
-        const mine = getDisputes().filter(function(d){
-            return (d.stuIds||[]).indexOf(sid) !== -1;
-        });
-        return `
-        <div class="page dispute-page">
-            <div class="page-head">
-                <h2>矛盾纠纷调解</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="privacy-tip">🔒 纠纷内容仅本人、班长、班主任可见，他人无法查看，保护个人隐私</div>
-            <button class="btn primary full" onclick="showDisputeForm()">＋ 提交纠纷调解申请</button>
-            <div class="card">
-                <div class="card-title">我的纠纷记录（${mine.length}）</div>
-                ${mine.length === 0 ? `<p class="empty">暂无纠纷记录</p >` : mine.map(function(d){
-                    const st = (d.status==='调解中'||!d.status)?'warn':(d.status==='已调解'?'ok':'bad');
-                    return `<div class="dis-row" onclick="router.go('dispute/detail/${d.id}')">
-                        <div class="dis-title">${escapeHtml(d.title||'纠纷')}</div>
-                        <div class="dis-meta">${fmtDate(d.createTime)}</div>
-                        <span class="badge ${st}">${escapeHtml(d.status||'调解中')}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-    
-    function renderDisputeManager() {
-        const list = getDisputes();
-        const pending = list.filter(function(d){ return d.status==='调解中'||!d.status; }).length;
-        return `
-        <div class="page dispute-page">
-            <div class="page-head">
-                <h2>矛盾纠纷调解</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="privacy-tip">🔒 纠纷内容仅本人、班长、班主任可见，保护个人隐私</div>
-            <div class="card stat-card">
-                <div class="stat-num">${pending}</div>
-                <div class="stat-label">待调解纠纷</div>
-                <div class="stat-sub">共 ${list.length} 条</div>
-            </div>
-            <div class="card">
-                <div class="card-title">纠纷列表</div>
-                ${list.length === 0 ? `<p class="empty">暂无纠纷记录</p >` : list.map(function(d){
-                    const st = (d.status==='调解中'||!d.status)?'warn':(d.status==='已调解'?'ok':'bad');
-                    return `<div class="dis-row" onclick="router.go('dispute/detail/${d.id}')">
-                        <div class="dis-title">${escapeHtml(d.title||'纠纷')}</div>
-                        <div class="dis-meta">${escapeHtml(d.stuNames||'')} · ${fmtDate(d.createTime)}</div>
-                        <span class="badge ${st}">${escapeHtml(d.status||'调解中')}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-}
-
-function getDisputes() { return store.data.disputes || []; }
-
-function showDisputeForm() {
-    const students = getStudentList();
-    openModal(`
-        <h3>提交纠纷调解申请</h3>
-        <div class="field"><label>标题</label><input id="dp-title" placeholder="简述纠纷事项" /></div>
-        <div class="field"><label>涉及同学（可多选）</label>
-            <div class="check-scroll">
-                ${students.map(function(s){
-                    return `<label class="check-row"><input type="checkbox" class="dp-stu" value="${s.id}" /> ${escapeHtml(s.name)}（${escapeHtml(s.studentNo||'')}）</label>`;
-                }).join('')}
-            </div>
-        </div>
-        <div class="field"><label>纠纷详细描述</label><textarea id="dp-cause" rows="4" placeholder="请描述纠纷经过，内容将加密保存，仅相关人员可见"></textarea></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveDispute()">提交</button>
-        </div>
-    `);
-}
-
-function saveDispute() {
-    if (!currentUser) return toast('请先登录');
-    const title = val('dp-title'); const cause = val('dp-cause');
-    if (!title || !cause) return toast('请填写标题和详细描述');
-    const stuIds = Array.from(document.querySelectorAll('.dp-stu:checked')).map(function(c){ return c.value; });
-    if (stuIds.indexOf(currentUser.id) === -1) stuIds.unshift(currentUser.id);
-    const students = getStudentList();
-    const stuNames = stuIds.map(function(id){ const s = students.find(function(x){return x.id===id;}); return s?s.name:id; }).join('、');
-    const d = {
-        id: 'dp' + Date.now(),
-        title: title,
-        causeEnc: encodeBase64(cause),
-        stuIds: stuIds, stuNames: stuNames,
-        status: '调解中',
-        createBy: currentUser.id, createName: currentUser.name,
-        createTime: Date.now(),
-        logs: [{ time: Date.now(), who: currentUser.name, action: '提交纠纷申请' }]
-    };
-    store.data.disputes = store.data.disputes || [];
-    store.data.disputes.unshift(d);
-    addLog('提交纠纷申请', title, 'dispute');
-    pushNotify('纠纷调解', currentUser.name + ' 提交了纠纷调解申请，请尽快处理', 'dispute');
-    store.save(); closeModal(); toast('已提交，等待调解'); router.render();
-}
-
-function renderDisputeDetail(id) {
-    const d = getDisputes().find(function(x){ return x.id === id; });
-    if (!d) return `<div class="page"><p class="empty">未找到该纠纷</p ></div>`;
-    const canView = currentUser && (currentUser.role !== 'student' || (d.stuIds||[]).indexOf(currentUser.id) !== -1);
-    if (!canView) return `<div class="page"><p class="empty">无权查看该纠纷记录</p ></div>`;
-    let cause = '';
-    try { cause = decodeBase64(d.causeEnc); } catch(e) { cause = ''; }
-    return `
-    <div class="page dispute-page">
-        <div class="page-head">
-            <h2>纠纷详情</h2>
-            <button class="icon-btn" onclick="router.go('dispute')">←</button>
-        </div>
-        <div class="card">
-            <div class="card-title">${escapeHtml(d.title||'纠纷')}</div>
-            <p class="detail-line">涉及同学：${escapeHtml(d.stuNames||'')}</p >
-            <p class="detail-line">状态：${escapeHtml(d.status||'调解中')}</p >
-            <p class="detail-line">提交：${escapeHtml(d.createName||'')} · ${fmtTime(d.createTime)}</p >
-        </div>
-        <div class="card">
-            <div class="card-title">详细描述</div>
-            <p class="detail-text">${escapeHtml(cause||'（无）')}</p >
-        </div>
-        ${currentUser && currentUser.role !== 'student' ? `
-        <div class="card">
-            <div class="card-title">调解处理</div>
-            <div class="field"><label>处理结果</label><textarea id="dp-result" rows="3" placeholder="填写调解结果">${d.result?escapeHtml(d.result):''}</textarea></div>
-            <div class="modal-btns">
-                <button class="btn ghost" onclick="closeDispute('${id}')">标记已调解</button>
-                <button class="btn primary" onclick="saveDisputeResult('${id}')">保存结果</button>
-            </div>
-        </div>` : ''}
-        <div class="card">
-            <div class="card-title">处理记录</div>
-            ${(d.logs||[]).map(function(l){
-                return `<div class="log-row"><span class="log-who">${escapeHtml(l.who)}</span><span class="log-act">${escapeHtml(l.action)}</span><span class="log-time">${fmtTime(l.time)}</span></div>`;
-            }).join('') || `<p class="empty">暂无处理记录</p >`}
-        </div>
-    </div>`;
-}
-
-function saveDisputeResult(id) {
-    const d = getDisputes().find(function(x){ return x.id === id; });
+  showDetail(id) {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const d = this.getList().find(x => x.id === id);
     if (!d) return;
-    d.result = val('dp-result');
-    d.logs = d.logs || [];
-    d.logs.push({ time: Date.now(), who: currentUser.name, action: '保存调解结果' });
-    addLog('保存调解结果', d.title, 'dispute');
-    store.save(); toast('已保存'); router.render();
-}
-
-function closeDispute(id) {
-    const d = getDisputes().find(function(x){ return x.id === id; });
-    if (!d) return;
-    if (!confirm('确认标记该纠纷为已调解吗？')) return;
-    d.status = '已调解';
-    d.logs = d.logs || [];
-    d.logs.push({ time: Date.now(), who: currentUser.name, action: '标记已调解' });
-    addLog('调解完成', d.title, 'dispute');
-    pushNotify('纠纷调解', '纠纷「' + (d.title||'') + '」已调解完成', 'dispute');
-    store.save(); toast('已标记调解完成'); router.render();
-}
-
-/* base64 编解码（用于纠纷隐私加密） */
-function encodeBase64(str) {
-    try { return btoa(unescape(encodeURIComponent(str))); }
-    catch(e) { return ''; }
-}
-
-function decodeBase64(b64) {
-    try { return decodeURIComponent(escape(atob(b64))); }
-    catch(e) { return ''; }
-}
-/* ========== 宿舍情况记录模块 ========== */
-function renderDorm() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const isTeacher = currentUser && currentUser.role === 'teacher';
-    
-    if (isStudent) return renderDormStudent();
-    return renderDormManager();
-    
-    function renderDormStudent() {
-        const sid = currentUser ? currentUser.id : '';
-        const myDorm = getDormList().find(function(r){ return r.room; });
-        const recs = getDormRecs().filter(function(r){ return (r.stuIds||[]).indexOf(sid) !== -1 || r.room === (myDorm?myDorm.room:''); });
-        return `
-        <div class="page dorm-page">
-            <div class="page-head">
-                <h2>宿舍情况记录</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card">
-                <div class="card-title">我的宿舍</div>
-                ${myDorm ? `<p class="detail-line">宿舍：${escapeHtml(myDorm.room)}</p ><p class="detail-line">床位：${escapeHtml(myDorm.bed||'')}</p >` : `<p class="empty">暂未分配宿舍</p >`}
-            </div>
-            <div class="card">
-                <div class="card-title">宿舍情况记录</div>
-                ${recs.length === 0 ? `<p class="empty">暂无记录</p >` : recs.map(function(r){
-                    return `<div class="dorm-row">
-                        <div class="dorm-date">${fmtDate(r.date)}</div>
-                        <div class="dorm-type">${escapeHtml(r.type||'日常检查')}</div>
-                        <div class="dorm-note">${escapeHtml(r.note||'')}</div>
-                    </div>`;
+    const students = Store.getStudents();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>${d.date} ${d.type==='class'?'课堂':'晚自习'}考勤</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body" style="padding:0;">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>姓名</th><th>状态</th><th>备注</th></tr></thead>
+              <tbody>
+                ${d.records.map(r => {
+                  const s = students.find(x => x.id === r.stuId);
+                  return `<tr><td>${escapeHtml(s?.name || r.stuId)}</td><td><span class="tag ${this.STATUSES[r.status]?.tag||''}">${this.STATUSES[r.status]?.label||r.status}</span></td><td>${escapeHtml(r.remark||'')}</td></tr>`;
                 }).join('')}
-            </div>
-        </div>`;
-    }
-    
-    function renderDormManager() {
-        const dorms = getDormList();
-        const recs = getDormRecs();
-        return `
-        <div class="page dorm-page">
-            <div class="page-head">
-                <h2>宿舍情况记录</h2>
-                <button class="icon-btn" onclick="router.go('home')">⌂</button>
-            </div>
-            <div class="card stat-card">
-                <div class="stat-num">${dorms.length}</div>
-                <div class="stat-label">宿舍间数</div>
-                <div class="stat-sub">共 ${recs.length} 条记录</div>
-            </div>
-            ${isLeader ? `<button class="btn primary full" onclick="showDormRecordForm()">＋ 记录宿舍情况</button>` : ''}
-            <div class="card">
-                <div class="card-title">宿舍列表</div>
-                ${dorms.length === 0 ? `<p class="empty">暂无宿舍信息</p >` : dorms.map(function(r){
-                    const rec = recs.filter(function(x){ return x.room === r.room; }).pop();
-                    return `<div class="dorm-row" onclick="router.go('dorm/detail/${encodeURIComponent(r.room)}')">
-                        <div class="dorm-date">${escapeHtml(r.room)}</div>
-                        <div class="dorm-note">${escapeHtml(r.memberNames||'')}</div>
-                        ${rec ? `<span class="badge ok">${fmtDate(rec.date)}</span>` : `<span class="badge warn">无记录</span>`}
-                    </div>`;
-                }).join('')}
-            </div>
-        </div>`;
-    }
-}
-
-function getDormList() { return store.data.dormList || []; }
-function getDormRecs() { return store.data.dormRecs || []; }
-
-function showDormRecordForm() {
-    const dorms = getDormList();
-    openModal(`
-        <h3>记录宿舍情况</h3>
-        <div class="field"><label>宿舍</label><select id="dm-room">
-            ${dorms.length === 0 ? `<option value="">（暂无宿舍，请先在台账录入）</option>` : dorms.map(function(r){ return `<option value="${r.room}">${escapeHtml(r.room)}</option>`; }).join('')}
-        </select></div>
-        <div class="field"><label>类型</label><select id="dm-type">
-            <option>日常检查</option><option>卫生检查</option><option>安全检查</option><option>设施报修</option><option>其他</option>
-        </select></div>
-        <div class="field"><label>情况说明</label><textarea id="dm-note" rows="3" placeholder="填写宿舍情况说明"></textarea></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveDormRecord()">保存</button>
-        </div>
-    `);
-}
-
-function saveDormRecord() {
-    const room = val('dm-room'); const type = val('dm-type'); const note = val('dm-note');
-    if (!room) return toast('请选择宿舍');
-    if (!note) return toast('请填写情况说明');
-    store.data.dormRecs = store.data.dormRecs || [];
-    store.data.dormRecs.unshift({
-        id: 'dm' + Date.now(), room: room, type: type, note: note,
-        createBy: currentUser ? currentUser.id : '', createName: currentUser ? currentUser.name : '',
-        createTime: Date.now()
-    });
-    addLog('记录宿舍情况', room + ' · ' + type, 'dorm');
-    store.save(); closeModal(); toast('已记录'); router.render();
-}
-
-function renderDormDetail(room) {
-    const r = room ? decodeURIComponent(room) : '';
-    const recs = getDormRecs().filter(function(x){ return x.room === r; });
-    const dorm = getDormList().find(function(x){ return x.room === r; });
-    return `
-    <div class="page dorm-page">
-        <div class="page-head">
-            <h2>宿舍 ${escapeHtml(r)}</h2>
-            <button class="icon-btn" onclick="router.go('dorm')">←</button>
-        </div>
-        <div class="card">
-            <div class="card-title">成员</div>
-            <p class="detail-line">${dorm ? escapeHtml(dorm.memberNames||'') : '（未登记）'}</p >
-        </div>
-        <div class="card">
-            <div class="card-title">情况记录（${recs.length}）</div>
-            ${recs.length === 0 ? `<p class="empty">暂无记录</p >` : recs.map(function(x){
-                return `<div class="dorm-row">
-                    <div class="dorm-date">${fmtDate(x.date)}</div>
-                    <div class="dorm-type">${escapeHtml(x.type||'')}</div>
-                    <div class="dorm-note">${escapeHtml(x.note||'')}</div>
-                    <div class="dorm-meta">${escapeHtml(x.createName||'')} · ${fmtTime(x.createTime)}</div>
-                </div>`;
-            }).join('')}
-        </div>
-    </div>`;
-}
-/* ========== 台账表格模块 ========== */
-function renderLedger() {
-    const isLeader = currentUser && currentUser.role === 'leader';
-    const tables = getLedgerTables();
-    return `
-    <div class="page ledger-page">
-        <div class="page-head">
-            <h2>台账表格</h2>
-            <button class="icon-btn" onclick="router.go('home')">⌂</button>
-        </div>
-        ${isLeader ? `<button class="btn primary full" onclick="showLedgerForm()">＋ 新建台账表</button>` : ''}
-        <div class="card">
-            <div class="card-title">台账列表（${tables.length}）</div>
-            ${tables.length === 0 ? `<p class="empty">暂无台账，请班长新建</p >` : tables.map(function(t){
-                return `<div class="ledger-row" onclick="router.go('ledger/detail/${t.id}')">
-                    <div class="ledger-name">${escapeHtml(t.name)}</div>
-                    <div class="ledger-meta">${t.cols.length} 列 · ${(t.rows||[]).length} 行 · ${fmtDate(t.createTime)}</div>
-                </div>`;
-            }).join('')}
-        </div>
-        <button class="btn ghost full" onclick="exportAll()">📤 导出全部数据</button>
-    </div>`;
-}
-
-function getLedgerTables() { return store.data.ledgerTables || []; }
-
-function showLedgerForm() {
-    openModal(`
-        <h3>新建台账表</h3>
-        <div class="field"><label>表名</label><input id="lg-name" placeholder="如：班费收支台账" /></div>
-        <div class="field"><label>列名（用逗号分隔）</label><input id="lg-cols" placeholder="如：日期,事项,收入,支出,经手人" /></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveLedgerTable()">创建</button>
-        </div>
-    `);
-}
-
-function saveLedgerTable() {
-    const name = val('lg-name'); const cols = val('lg-cols');
-    if (!name) return toast('请填写表名');
-    if (!cols) return toast('请填写列名');
-    const colArr = cols.split(/[,，]/).map(function(c){ return c.trim(); }).filter(Boolean);
-    if (!colArr.length) return toast('列名无效');
-    store.data.ledgerTables = store.data.ledgerTables || [];
-    store.data.ledgerTables.unshift({
-        id: 'lg' + Date.now(), name: name, cols: colArr, rows: [],
-        createBy: currentUser ? currentUser.id : '', createTime: Date.now()
-    });
-    addLog('新建台账表', name, 'ledger');
-    store.save(); closeModal(); toast('台账已创建'); router.render();
-}
-
-function renderLedgerDetail(id) {
-    const t = getLedgerTables().find(function(x){ return x.id === id; });
-    if (!t) return `<div class="page"><p class="empty">未找到该台账</p ></div>`;
-    const isLeader = currentUser && currentUser.role === 'leader';
-    return `
-    <div class="page ledger-page">
-        <div class="page-head">
-            <h2>${escapeHtml(t.name)}</h2>
-            <button class="icon-btn" onclick="router.go('ledger')">←</button>
-        </div>
-        ${isLeader ? `<button class="btn primary full" onclick="showLedgerRowForm('${id}')">＋ 新增一行</button>` : ''}
-        <div class="card table-wrap">
-            <table class="ledger-table">
-                <thead><tr>${t.cols.map(function(c){ return `<th>${escapeHtml(c)}</th>`; }).join('')}</tr></thead>
-                <tbody>
-                    ${t.rows.length === 0 ? `<tr><td colspan="${t.cols.length}" class="empty">暂无数据</td></tr>` : t.rows.map(function(r){
-                        return `<tr>${t.cols.map(function(c,ci){
-                            const v = r[ci] !== undefined ? r[ci] : '';
-                            return `<td>${escapeHtml(String(v))}</td>`;
-                        }).join('')}</tr>`;
-                    }).join('')}
-                </tbody>
+              </tbody>
             </table>
+          </div>
         </div>
-    </div>`;
-}
+        <div class="modal-footer"><button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  },
 
-function showLedgerRowForm(id) {
-    const t = getLedgerTables().find(function(x){ return x.id === id; });
-    if (!t) return;
-    openModal(`
-        <h3>新增台账行 - ${escapeHtml(t.name)}</h3>
-        ${t.cols.map(function(c,i){
-            return `<div class="field"><label>${escapeHtml(c)}</label><input id="lgr-${i}" /></div>`;
-        }).join('')}
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveLedgerRow('${id}')">保存</button>
+  showRecord() {
+    const u = Auth.current();
+    if (u.role !== 'monitor') { toast('无权限'); return; }
+    const students = Store.getStudents();
+    if (!students.length) { toast('请先导入学生名单'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>录入考勤</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>日期</label><input type="date" id="attDate" value="${todayStr()}"></div>
+          <div class="form-group"><label>类型</label>
+            <select id="attType"><option value="class">课堂考勤</option><option value="evening">晚自习考勤</option></select>
+          </div>
+          <div class="form-group"><label>学生考勤（默认到课）</label>
+            <div id="attStudents" style="max-height:300px;overflow-y:auto;">
+              ${students.map(s => `
+                <div class="flex gap-8 mb-8" style="align-items:center;">
+                  <span style="width:90px;font-size:0.85rem;">${escapeHtml(s.name)}</span>
+                  <select data-stuid="${s.id}" style="flex:1;padding:6px;border:1px solid var(--gray-3);border-radius:6px;">
+                    <option value="present">到课</option>
+                    <option value="absent">缺勤</option>
+                    <option value="late">迟到</option>
+                    <option value="early">早退</option>
+                    <option value="leave">请假</option>
+                  </select>
+                  <input type="text" data-stuid="${s.id}" class="att-remark" placeholder="备注" style="flex:1;padding:6px;border:1px solid var(--gray-3);border-radius:6px;">
+                </div>
+              `).join('')}
+            </div>
+          </div>
         </div>
-    `);
-}
-
-function saveLedgerRow(id) {
-    const t = getLedgerTables().find(function(x){ return x.id === id; });
-    if (!t) return;
-    const row = t.cols.map(function(c,i){ return val('lgr-' + i) || ''; });
-    t.rows = t.rows || [];
-    t.rows.push(row);
-    addLog('新增台账记录', t.name, 'ledger');
-    store.save(); closeModal(); toast('已保存'); router.render();
-}
-/* ========== 消息推送提醒模块 ========== */
-function renderNotify() {
-    const list = getNotifyList();
-    const isLeader = currentUser && currentUser.role === 'leader';
-    return `
-    <div class="page notify-page">
-        <div class="page-head">
-            <h2>消息推送提醒</h2>
-            <button class="icon-btn" onclick="router.go('home')">⌂</button>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="attSaveBtn">保存</button>
         </div>
-        ${isLeader ? `<button class="btn primary full" onclick="showNotifyForm()">＋ 推送新消息</button>` : ''}
-        <div class="card">
-            <div class="card-title">全部消息（${list.length}）</div>
-            ${list.length === 0 ? `<p class="empty">暂无消息</p >` : list.map(function(m){
-                return `<div class="notify-row ${m.read?'read':''}" onclick="router.go('notify/detail/${m.id}')">
-                    <div class="notify-title">${escapeHtml(m.title)}${m.read?'':'<span class="dot"></span>'}</div>
-                    <div class="notify-meta">${escapeHtml(m.fromName||'')} · ${fmtTime(m.createTime)}</div>
-                    <div class="notify-preview">${escapeHtml(m.content||'').slice(0,40)}</div>
-                </div>`;
-            }).join('')}
-        </div>
-    </div>`;
-}
-
-function getNotifyList() { return store.data.notifies || []; }
-
-function showNotifyForm() {
-    openModal(`
-        <h3>推送新消息</h3>
-        <div class="field"><label>标题</label><input id="nf-title" placeholder="消息标题" /></div>
-        <div class="field"><label>内容</label><textarea id="nf-content" rows="4" placeholder="消息内容"></textarea></div>
-        <div class="field"><label>推送范围</label><select id="nf-scope">
-            <option value="all">全班所有人</option>
-            <option value="student">仅学生</option>
-            <option value="leader">仅班长</option>
-            <option value="teacher">仅班主任</option>
-        </select></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveNotify()">推送</button>
-        </div>
-    `);
-}
-
-function saveNotify() {
-    const title = val('nf-title'); const content = val('nf-content'); const scope = val('nf-scope');
-    if (!title || !content) return toast('请填写标题和内容');
-    store.data.notifies = store.data.notifies || [];
-    store.data.notifies.unshift({
-        id: 'nf' + Date.now(), title: title, content: content, scope: scope,
-        read: false,
-        createBy: currentUser ? currentUser.id : '', fromName: currentUser ? currentUser.name : '',
-        createTime: Date.now()
-    });
-    addLog('推送消息', title, 'notify');
-    store.save(); closeModal(); toast('消息已推送'); router.render();
-}
-
-function renderNotifyDetail(id) {
-    const m = getNotifyList().find(function(x){ return x.id === id; });
-    if (!m) return `<div class="page"><p class="empty">未找到该消息</p ></div>`;
-    if (currentUser && currentUser.role !== 'student') { m.read = true; store.save(); }
-    return `
-    <div class="page notify-page">
-        <div class="page-head">
-            <h2>消息详情</h2>
-            <button class="icon-btn" onclick="router.go('notify')">←</button>
-        </div>
-        <div class="card">
-            <div class="card-title">${escapeHtml(m.title)}</div>
-            <p class="detail-line">发布：${escapeHtml(m.fromName||'')} · ${fmtTime(m.createTime)}</p >
-        </div>
-        <div class="card">
-            <div class="card-title">消息内容</div>
-            <p class="detail-text">${escapeHtml(m.content||'')}</p >
-        </div>
-    </div>`;
-}
-
-/* 推送通知辅助：统一入口，新增消息到列表并留痕 */
-function pushNotify(title, content, type) {
-    store.data.notifies = store.data.notifies || [];
-    store.data.notifies.unshift({
-        id: 'nf' + Date.now() + Math.random().toString(36).slice(2,6),
-        title: title, content: content, type: type || 'notify', scope: 'all',
-        read: false, fromName: currentUser ? currentUser.name : '系统',
-        createTime: Date.now()
-    });
-    store.markDirty('notifies');
-}
-/* ========== 数据导出 ========== */
-function exportAll() {
-    const all = {
-        notifies: getNotifyList(),
-        subsidyItems: getSubsidyItems(),
-        subsidyQuals: store.data.subsidyQuals || [],
-        paymentRows: getPaymentRows(),
-        attendanceRecs: getAttendanceRecs(),
-        disputes: (getDisputes()||[]).map(function(d){
-            return { id:d.id, title:d.title, stuNames:d.stuNames, status:d.status, result:d.result, createTime:d.createTime };
-        }),
-        dormList: getDormList(),
-        dormRecs: getDormRecs(),
-        ledgerTables: getLedgerTables(),
-        logs: store.data.logs || []
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    overlay.querySelector('#attSaveBtn').onclick = () => {
+      const date = overlay.querySelector('#attDate').value;
+      const type = overlay.querySelector('#attType').value;
+      if (!date) { toast('请选择日期'); return; }
+      const records = [];
+      const selects = overlay.querySelectorAll('#attStudents select');
+      const remarks = overlay.querySelectorAll('#attStudents .att-remark');
+      selects.forEach(sel => {
+        const stuId = sel.dataset.stuid;
+        const remark = [...remarks].find(r => r.dataset.stuid === stuId)?.value?.trim() || '';
+        records.push({ stuId, status: sel.value, remark });
+      });
+      const list = this.getList();
+      const d = { id:uid(), date, type, records, recorder:u.name, createdAt:now() };
+      list.push(d);
+      this.save(list);
+      Store.addLog(u.name, u.role, '录入考勤', d.id);
+      overlay.remove();
+      toast('已保存');
+      this.renderList();
     };
-    const blob = new Blob([JSON.stringify(all, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '班级工作台全量数据_' + todayStr() + '.json';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    addLog('导出全量数据', '导出JSON备份', 'export');
-    toast('全量数据已导出为JSON');
-}
+  },
 
-function exportExcel() {
-    // 简单 CSV 导出（可用 Excel 打开）
-    const lines = [];
-    lines.push(['模块','记录数'].join(','));
-    lines.push(['通知',getNotifyList().length]);
-    lines.push(['补助项目',getSubsidyItems().length]);
-    lines.push(['缴费记录',getPaymentRows().length]);
-    lines.push(['考勤记录',getAttendanceRecs().length]);
-    lines.push(['纠纷',getDisputes().length]);
-    lines.push(['宿舍记录',getDormRecs().length]);
-    const csv = lines.join('\n');
-    const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = '班级工作台统计_' + todayStr() + '.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast('统计已导出为CSV');
-}
-
-/* ========== 路由 ========== */
-const Router = {
-    go: function(path) {
-        window.location.hash = path;
-    },
-    render: function() {
-        renderPage();
-    }
+  export() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const students = Store.getStudents();
+    const list = this.getList().sort((a,b) => a.date.localeCompare(b.date));
+    // 横向表：学生 × 日期
+    const dates = [...new Set(list.map(d => `${d.date}(${d.type==='class'?'课':'晚'})`))];
+    const data = students.map(s => {
+      const row = { '学号': s.stuNo, '姓名': s.name };
+      dates.forEach(dt => {
+        const [date, typeMark] = [dt.slice(0,10), dt.slice(-2)];
+        const type = typeMark === '课' ? 'class' : 'evening';
+        const d = list.find(x => x.date === date && x.type === type);
+        const r = d?.records.find(x => x.stuId === s.id);
+        row[dt] = r ? this.STATUSES[r.status]?.label : '';
+      });
+      // 统计
+      let absent=0, late=0, early=0, leave=0;
+      list.forEach(d => {
+        const r = d.records.find(x => x.stuId === s.id);
+        if (r?.status === 'absent') absent++;
+        if (r?.status === 'late') late++;
+        if (r?.status === 'early') early++;
+        if (r?.status === 'leave') leave++;
+      });
+      row['缺勤次数'] = absent;
+      row['迟到次数'] = late;
+      row['早退次数'] = early;
+      row['请假次数'] = leave;
+      return row;
+    });
+    downloadExcel(`考勤表_${todayStr()}.xlsx`, data, '考勤');
+    Store.addLog(u.name, u.role, '导出考勤表');
+    toast('已导出');
+  },
 };
-const router = Router;
 
-/* ========== 全局渲染 ========== */
-function renderPage() {
-    const hash = window.location.hash.replace(/^#/, '') || 'login';
-    if (!currentUser) {
-        // 未登录：仅渲染登录页
-        if (hash !== 'login') window.location.hash = 'login';
-        document.getElementById('app').innerHTML = renderLogin();
-        document.title = '班级工作台';
-        return;
+// ============================================================
+// 模块5：请假审批
+// ============================================================
+const Leave = {
+  getList() { return Store.get('leaves', []); },
+  save(list) { Store.set('leaves', list); },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    if (u.role === 'student') this.renderStudentView(u);
+    else this.renderManageView(u);
+  },
+
+  renderStudentView(u) {
+    const list = this.getList().filter(l => l.stuId === u.id).sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    $('#app').innerHTML = `
+      ${renderTopbar('我的请假', 'workbench', `<button class="btn-action" onclick="Leave.showApply()">申请</button>`)}
+      <div class="page page-with-nav">
+        <div id="leaveList">${this.renderItems(list, u)}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderManageView(u) {
+    const list = this.getList().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    $('#app').innerHTML = `
+      ${renderTopbar('请假审批', 'workbench')}
+      <div class="page page-with-nav">
+        <div class="seg-control">
+          <button class="seg-item active" data-filter="all" onclick="Leave.filter('all')">全部</button>
+          <button class="seg-item" data-filter="pending" onclick="Leave.filter('pending')">待审批</button>
+          <button class="seg-item" data-filter="approved" onclick="Leave.filter('approved')">已通过</button>
+          <button class="seg-item" data-filter="rejected" onclick="Leave.filter('rejected')">已驳回</button>
+        </div>
+        <div id="leaveList">${this.renderItems(list, u)}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderItems(list, u) {
+    const filtered = list.filter(l => u.role !== 'student' || l.stuId === u.id);
+    if (!filtered.length) return emptyState('暂无请假申请');
+    return filtered.map(l => {
+      const s = Store.getStudent(l.stuId);
+      let tag = '';
+      if (l.status === 'pending') tag = '<span class="tag tag-warning">待审批</span>';
+      else if (l.status === 'approved') tag = '<span class="tag tag-success">已通过</span>';
+      else if (l.status === 'rejected') tag = '<span class="tag tag-danger">已驳回</span>';
+      return `
+        <div class="card" onclick="Leave.showDetail('${l.id}')">
+          <div class="card-body">
+            <div class="flex-between">
+              <span class="li-title">${escapeHtml(s?.name || l.stuName)} · ${l.start} 至 ${l.end}</span>
+              ${tag}
+            </div>
+            <div class="li-meta">原因：${escapeHtml(l.reason)}</div>
+            <div class="li-meta">申请时间：${fmtDateShort(l.createdAt)}</div>
+            ${l.approver ? `<div class="li-meta">审批人：${escapeHtml(l.approver)} · ${fmtDate(l.approveTime, true)}</div>`:''}
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  filter(f) {
+    $$('.seg-item').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
+    const u = Auth.current();
+    let list = this.getList().sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+    if (f !== 'all') list = list.filter(l => l.status === f);
+    $('#leaveList').innerHTML = this.renderItems(list, u);
+  },
+
+  showDetail(id) {
+    const u = Auth.current();
+    const l = this.getList().find(x => x.id === id);
+    if (!l) return;
+    const s = Store.getStudent(l.stuId);
+    const isTeacher = u.role === 'teacher';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>请假详情</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="detail-row"><span class="dr-label">申请人</span><span class="dr-value">${escapeHtml(s?.name || l.stuName)}</span></div>
+          <div class="detail-row"><span class="dr-label">起止时间</span><span class="dr-value">${l.start} 至 ${l.end}</span></div>
+          <div class="detail-row"><span class="dr-label">原因</span><span class="dr-value">${escapeHtml(l.reason)}</span></div>
+          <div class="detail-row"><span class="dr-label">申请时间</span><span class="dr-value">${fmtDate(l.createdAt, true)}</span></div>
+          <div class="detail-row"><span class="dr-label">状态</span><span class="dr-value">${l.status==='pending'?'<span class="text-warning">待审批</span>':l.status==='approved'?'<span class="text-success">已通过</span>':'<span class="text-danger">已驳回</span>'}</span></div>
+          ${l.approver ? `<div class="detail-row"><span class="dr-label">审批人</span><span class="dr-value">${escapeHtml(l.approver)} · ${fmtDate(l.approveTime, true)}</span></div>`:''}
+          ${l.approveRemark ? `<div class="detail-row"><span class="dr-label">审批意见</span><span class="dr-value">${escapeHtml(l.approveRemark)}</span></div>`:''}
+        </div>
+        ${isTeacher && l.status === 'pending' ? `
+        <div class="modal-footer">
+          <button class="btn btn-danger" style="flex:1;" id="lvReject">驳回</button>
+          <button class="btn btn-success" style="flex:1;" id="lvApprove">通过</button>
+        </div>` : `<div class="modal-footer"><button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`}
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    if (isTeacher && l.status === 'pending') {
+      overlay.querySelector('#lvApprove').onclick = () => this.approve(id, true);
+      overlay.querySelector('#lvReject').onclick = () => this.approve(id, false);
     }
-    // 已登录：底部导航
-    document.getElementById('app').innerHTML = renderShell(hash);
-}
+  },
 
-function renderShell(hash) {
-    const parts = hash.split('/');
-    const main = parts[0];
-    let content = '';
-    switch(main) {
-        case 'home': content = renderHome(); break;
-        case 'mine': content = renderMine(); break;
-        case 'notify': content = parts[1] ? renderNotifyDetail(parts[1]) : renderNotify(); break;
-        case 'subsidy': content = parts[1] ? renderSubsidyDetail(parts[1]) : renderSubsidy(); break;
-        case 'payment': content = renderPayment(); break;
-        case 'attendance': content = renderAttendance(); break;
-        case 'dispute': content = parts[1] ? renderDisputeDetail(parts[1]) : renderDispute(); break;
-        case 'dorm': content = parts[1] ? renderDormDetail(parts[1]) : renderDorm(); break;
-        case 'ledger': content = parts[1] ? renderLedgerDetail(parts[1]) : renderLedger(); break;
-        default: content = renderHome();
+  async approve(id, ok) {
+    const u = Auth.current();
+    if (u.role !== 'teacher') { toast('仅班主任可审批'); return; }
+    const remark = await promptDialog('审批意见', ok ? '同意请假' : '说明驳回原因');
+    if (remark === null) return;
+    const list = this.getList();
+    const l = list.find(x => x.id === id);
+    l.status = ok ? 'approved' : 'rejected';
+    l.approver = u.name;
+    l.approveTime = now();
+    l.approveRemark = remark;
+    this.save(list);
+    Store.addLog(u.name, u.role, ok ? '批准请假' : '驳回请假', id);
+    toast(ok ? '已通过' : '已驳回');
+    $('.modal-overlay')?.remove();
+    this.renderList();
+  },
+
+  showApply() {
+    const u = Auth.current();
+    if (u.role !== 'student') { toast('仅学生可申请'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>请假申请</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>开始时间</label><input type="datetime-local" id="lvStart"></div>
+          <div class="form-group"><label>结束时间</label><input type="datetime-local" id="lvEnd"></div>
+          <div class="form-group"><label>请假原因</label><textarea id="lvReason" placeholder="请详细说明请假原因"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="lvSubmitBtn">提交</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    overlay.querySelector('#lvSubmitBtn').onclick = () => {
+      const start = overlay.querySelector('#lvStart').value;
+      const end = overlay.querySelector('#lvEnd').value;
+      const reason = overlay.querySelector('#lvReason').value.trim();
+      if (!start || !end) { toast('请填写时间'); return; }
+      if (!reason) { toast('请填写原因'); return; }
+      if (start > end) { toast('开始时间不能晚于结束'); return; }
+      const list = this.getList();
+      const l = {
+        id: uid(), stuId: u.id, stuName: u.name,
+        start: start.replace('T',' '), end: end.replace('T',' '),
+        reason, status: 'pending', createdAt: now(),
+      };
+      list.push(l);
+      this.save(list);
+      Store.addLog(u.name, 'student', '提交请假申请', l.id);
+      overlay.remove();
+      toast('已提交');
+      this.renderList();
+    };
+  },
+};
+
+// ============================================================
+// 模块6：矛盾纠纷调解登记（隐私保护）
+// ============================================================
+const Dispute = {
+  getList() { return Store.get('disputes', []); },
+  save(list) { Store.set('disputes', list); },
+
+  // 学生可见的列表（仅自己上报的）
+  renderStudentView(u) {
+    const list = this.getList().filter(d => d.reporterId === u.id || d.involvedIds?.includes(u.id));
+    const app = $('#app');
+    app.innerHTML = `
+      ${renderTopbar('纠纷调解', 'workbench', `<button class="btn-action" onclick="Dispute.showReport()">上报</button>`)}
+      <div class="page page-with-nav">
+        <div class="card">
+          <div class="card-body text-center">
+            <p class="text-small text-muted">纠纷调解记录涉及隐私，仅可见本人上报/参与的记录</p>
+            <p class="text-small text-muted">完整档案由班主任、班长管理</p>
+          </div>
+        </div>
+        <div id="disputeList">${this.renderItems(list, u, true)}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderManageView(u) {
+    const list = this.getList().sort((a,b) => (b.time||'').localeCompare(a.time||''));
+    $('#app').innerHTML = `
+      ${renderTopbar('纠纷调解档案', 'workbench', u.role==='monitor' ? `<button class="btn-action" onclick="Dispute.showRecord()">登记</button>` : '')}
+      <div class="page page-with-nav">
+        <div id="disputeList">${this.renderItems(list, u, false)}</div>
+        <button class="btn btn-outline btn-block" style="margin:0 12px;max-width:calc(100% - 24px);" onclick="Dispute.export()">导出调解档案</button>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    if (u.role === 'student') this.renderStudentView(u);
+    else this.renderManageView(u);
+  },
+
+  renderItems(list, u, isStudent) {
+    if (!list.length) return emptyState(isStudent ? '暂无相关记录' : '暂无调解档案');
+    return list.map(d => {
+      const info = isStudent ? (d.reporterId === u.id ? '我上报' : '涉及本人') : (d.involved || '匿名');
+      const cause = decodeBase64(d.causeEnc || '');
+      let tag = '<span class="tag tag-gray">待处理</span>';
+      const result = decodeBase64(d.resultEnc || '');
+      if (result) tag = '<span class="tag tag-success">已调解</span>';
+      return `
+        <div class="card" onclick="Dispute.showDetail('${d.id}')">
+          <div class="card-body">
+            <div class="flex-between">
+              <span class="li-title">${escapeHtml(cause?.slice(0,20) || '纠纷事件')}</span>
+              ${tag}
+            </div>
+            <div class="li-meta">涉及：${escapeHtml(info)}</div>
+            <div class="li-meta">时间：${fmtDateShort(d.time || d.createdAt)}</div>
+          </div>
+        </div>`;
+    }).join('');
+  },
+
+  showDetail(id) {
+    const u = Auth.current();
+    const d = this.getList().find(x => x.id === id);
+    if (!d) return;
+    // 学生权限校验
+    if (u.role === 'student' && d.reporterId !== u.id && !d.involvedIds?.includes(u.id)) {
+      toast('无权查看此档案'); return;
     }
-    const nav = (main === 'home' || main === 'mine') ? renderNav(main) : '';
-    return `<div class="shell">${content}${nav}</div>`;
-}
+    // 解密内容
+    const cause = decodeBase64(d.causeEnc || '');
+    const process = decodeBase64(d.processEnc || '');
+    const mediation = decodeBase64(d.mediationEnc || '');
+    const result = decodeBase64(d.resultEnc || '');
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>纠纷调解详情</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="detail-row"><span class="dr-label">涉及人员</span><span class="dr-value">${escapeHtml(d.involved || '匿名')}</span></div>
+          <div class="detail-row"><span class="dr-label">事件起因</span><span class="dr-value">${escapeHtml(cause)}</span></div>
+          <div class="detail-row"><span class="dr-label">事件经过</span><span class="dr-value">${escapeHtml(process)}</span></div>
+          <div class="detail-row"><span class="dr-label">调解过程</span><span class="dr-value">${escapeHtml(mediation)}</span></div>
+          <div class="detail-row"><span class="dr-label">调解结果</span><span class="dr-value">${escapeHtml(result)}</span></div>
+          <div class="detail-row"><span class="dr-label">处理人</span><span class="dr-value">${escapeHtml(d.handler || '-')}</span></div>
+          <div class="detail-row"><span class="dr-label">处理时间</span><span class="dr-value">${fmtDate(d.time || d.createdAt, true)}</span></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  },
 
-function renderNav(active) {
+  showReport() {
+    const u = Auth.current();
+    if (u.role !== 'student') { toast('仅学生可上报'); return; }
+    this.showForm(false, u);
+  },
+
+  showRecord() {
+    const u = Auth.current();
+    if (u.role !== 'monitor') { toast('无权限'); return; }
+    this.showForm(true, u);
+  },
+
+  showForm(isManage, u) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>${isManage?'登记调解档案':'上报纠纷'}</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>涉及人员</label><input type="text" id="dsInvolved" placeholder="如：张三、李四（可匿名）"></div>
+          <div class="form-group"><label>事件起因</label><textarea id="dsCause" placeholder="简述事件起因"></textarea></div>
+          <div class="form-group"><label>事件经过</label><textarea id="dsProcess" placeholder="详细描述经过"></textarea></div>
+          ${isManage ? `
+            <div class="form-group"><label>调解过程</label><textarea id="dsMediation" placeholder="调解过程记录"></textarea></div>
+            <div class="form-group"><label>调解结果</label><textarea id="dsResult" placeholder="调解结果"></textarea></div>
+          ` : ''}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="dsSaveBtn">${isManage?'保存档案':'提交上报'}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    overlay.querySelector('#dsSaveBtn').onclick = () => {
+      const involved = overlay.querySelector('#dsInvolved').value.trim();
+      const cause = overlay.querySelector('#dsCause').value.trim();
+      const process = overlay.querySelector('#dsProcess').value.trim();
+      if (!cause) { toast('请填写事件起因'); return; }
+      const mediation = isManage ? overlay.querySelector('#dsMediation').value.trim() : '';
+      const result = isManage ? overlay.querySelector('#dsResult').value.trim() : '';
+      const list = this.getList();
+      const d = {
+        id: uid(),
+        reporterId: u.id, reporter: u.name,
+        involved,
+        involvedIds: [],
+        causeEnc: encodeBase64(cause),
+        processEnc: encodeBase64(process),
+        mediationEnc: encodeBase64(mediation),
+        resultEnc: encodeBase64(result),
+        cause: '', process: '', mediation: '', result: '', // 不存明文
+        handler: isManage ? u.name : '',
+        time: now(), createdAt: now(),
+        encrypted: true,
+      };
+      list.push(d);
+      this.save(list);
+      Store.addLog(u.name, u.role, isManage ? '登记调解档案' : '上报纠纷', d.id);
+      overlay.remove();
+      toast(isManage ? '已保存' : '已上报');
+      this.renderList();
+    };
+  },
+
+  export() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const list = this.getList();
+    const data = list.map(d => ({
+      '涉及人员': d.involved || '匿名',
+      '事件起因': decodeBase64(d.causeEnc || ''),
+      '事件经过': decodeBase64(d.processEnc || ''),
+      '调解过程': decodeBase64(d.mediationEnc || ''),
+      '调解结果': decodeBase64(d.resultEnc || ''),
+      '处理人': d.handler || '',
+      '处理时间': fmtDate(d.time || d.createdAt, true),
+      '上报人': d.reporter || '',
+    }));
+    downloadExcel(`纠纷调解档案_${todayStr()}.xlsx`, data, '纠纷调解');
+    Store.addLog(u.name, u.role, '导出调解档案');
+    toast('已导出');
+  },
+};
+
+// ============================================================
+// 模块7：宿舍情况记录
+// ============================================================
+const Dorm = {
+  getList() { return Store.get('dorms', []); },
+  save(list) { Store.set('dorms', list); },
+  TYPES: {
+    hygiene: '卫生检查',
+    late: '晚归',
+    absent: '不归',
+    violation: '违规违纪',
+  },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    if (u.role === 'student') this.renderStudentView(u);
+    else this.renderManageView(u);
+  },
+
+  renderStudentView(u) {
+    const list = this.getList().filter(d => d.dormNo === u.dorm).sort((a,b) => b.date.localeCompare(a.date));
+    $('#app').innerHTML = `
+      ${renderTopbar('我的宿舍', 'workbench')}
+      <div class="page page-with-nav">
+        <div class="card">
+          <div class="card-body">
+            <div class="detail-row"><span class="dr-label">宿舍号</span><span class="dr-value">${escapeHtml(u.dorm || '未登记')}</span></div>
+          </div>
+        </div>
+        <div id="dormList">${this.renderItems(list, true)}</div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderManageView(u) {
+    const list = this.getList().sort((a,b) => b.date.localeCompare(a.date));
+    const dorms = [...new Set(Store.getStudents().map(s => s.dorm).filter(Boolean))];
+    $('#app').innerHTML = `
+      ${renderTopbar('宿舍台账', 'workbench', u.role==='monitor' ? `<button class="btn-action" onclick="Dorm.showRecord()">录入</button>` : '')}
+      <div class="page page-with-nav">
+        ${dorms.length ? `<div class="seg-control">${dorms.map(d => `<button class="seg-item" data-dorm="${escapeHtml(d)}" onclick="Dorm.filterDorm('${escapeHtml(d)}')">${escapeHtml(d)}</button>`).join('')}<button class="seg-item active" data-dorm="all" onclick="Dorm.filterDorm('all')">全部</button></div>`:''}
+        <div id="dormList">${this.renderItems(list, false)}</div>
+        ${Auth.canManage() ? `<button class="btn btn-outline btn-block" style="margin:0 12px;max-width:calc(100% - 24px);" onclick="Dorm.export()">导出宿舍台账</button>`:''}
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  renderItems(list, isStudent) {
+    if (!list.length) return emptyState('暂无宿舍记录');
+    return list.map(d => `
+      <div class="card" onclick="${isStudent?'':'Dorm.showDetail'}('${d.id}')">
+        <div class="card-body">
+          <div class="flex-between">
+            <span class="li-title">${escapeHtml(d.dormNo)} · ${this.TYPES[d.type] || d.type}</span>
+            ${d.deduct ? `<span class="tag tag-danger">扣${d.deduct}分</span>` : '<span class="tag tag-success">无扣分</span>'}
+          </div>
+          <div class="li-meta">${d.date}</div>
+          <div class="li-meta">${escapeHtml(d.desc)}</div>
+          ${d.rectify ? `<div class="li-meta text-success">已整改：${escapeHtml(d.rectify)}</div>` : '<div class="li-meta text-warning">待整改</div>'}
+        </div>
+      </div>
+    `).join('');
+  },
+
+  filterDorm(dorm) {
+    $$('.seg-item').forEach(b => b.classList.toggle('active', b.dataset.dorm === dorm));
+    let list = this.getList().sort((a,b) => b.date.localeCompare(a.date));
+    if (dorm !== 'all') list = list.filter(d => d.dormNo === dorm);
+    $('#dormList').innerHTML = this.renderItems(list, false);
+  },
+
+  showDetail(id) {
+    const d = this.getList().find(x => x.id === id);
+    if (!d) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>宿舍记录详情</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="detail-row"><span class="dr-label">宿舍号</span><span class="dr-value">${escapeHtml(d.dormNo)}</span></div>
+          <div class="detail-row"><span class="dr-label">类型</span><span class="dr-value">${this.TYPES[d.type] || d.type}</span></div>
+          <div class="detail-row"><span class="dr-label">日期</span><span class="dr-value">${d.date}</span></div>
+          <div class="detail-row"><span class="dr-label">扣分</span><span class="dr-value">${d.deduct || 0}</span></div>
+          <div class="detail-row"><span class="dr-label">问题描述</span><span class="dr-value">${escapeHtml(d.desc)}</span></div>
+          <div class="detail-row"><span class="dr-label">整改情况</span><span class="dr-value">${escapeHtml(d.rectify) || '待整改'}</span></div>
+          <div class="detail-row"><span class="dr-label">记录人</span><span class="dr-value">${escapeHtml(d.recorder)}</span></div>
+        </div>
+        ${Auth.canManage() && !d.rectify ? `
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="Dorm.markRectify('${d.id}')">登记整改</button>
+        </div>` : `<div class="modal-footer"><button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>`}
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  },
+
+  async markRectify(id) {
+    const remark = await promptDialog('整改情况', '说明整改结果');
+    if (!remark) return;
+    const u = Auth.current();
+    const list = this.getList();
+    const d = list.find(x => x.id === id);
+    d.rectify = remark;
+    d.rectifyTime = now();
+    d.rectifyBy = u.name;
+    this.save(list);
+    Store.addLog(u.name, u.role, '登记宿舍整改', id);
+    toast('已登记');
+    $('.modal-overlay')?.remove();
+    this.renderList();
+  },
+
+  showRecord() {
+    const u = Auth.current();
+    if (u.role !== 'monitor') { toast('无权限'); return; }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>录入宿舍记录</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-group"><label>宿舍号</label><input type="text" id="dmDorm" placeholder="如：3-201"></div>
+          <div class="form-group"><label>类型</label>
+            <select id="dmType">
+              <option value="hygiene">卫生检查</option>
+              <option value="late">晚归</option>
+              <option value="absent">不归</option>
+              <option value="violation">违规违纪</option>
+            </select>
+          </div>
+          <div class="form-group"><label>日期</label><input type="date" id="dmDate" value="${todayStr()}"></div>
+          <div class="form-group"><label>扣分</label><input type="number" id="dmDeduct" value="0" placeholder="0表示不扣分"></div>
+          <div class="form-group"><label>问题描述</label><textarea id="dmDesc" placeholder="详细描述问题"></textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-primary" style="flex:1;" id="dmSaveBtn">保存</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    overlay.querySelector('#dmSaveBtn').onclick = () => {
+      const dormNo = overlay.querySelector('#dmDorm').value.trim();
+      const type = overlay.querySelector('#dmType').value;
+      const date = overlay.querySelector('#dmDate').value;
+      const deduct = parseFloat(overlay.querySelector('#dmDeduct').value) || 0;
+      const desc = overlay.querySelector('#dmDesc').value.trim();
+      if (!dormNo) { toast('请填写宿舍号'); return; }
+      if (!date) { toast('请选择日期'); return; }
+      const list = this.getList();
+      const d = { id:uid(), dormNo, type, date, deduct, desc, rectify:'', recorder:u.name, createdAt:now() };
+      list.push(d);
+      this.save(list);
+      Store.addLog(u.name, u.role, '录入宿舍记录', d.id);
+      overlay.remove();
+      toast('已保存');
+      this.renderList();
+    };
+  },
+
+  export() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const list = this.getList().sort((a,b) => a.date.localeCompare(b.date));
+    const data = list.map(d => ({
+      '宿舍号': d.dormNo,
+      '类型': this.TYPES[d.type] || d.type,
+      '日期': d.date,
+      '扣分': d.deduct || 0,
+      '问题描述': d.desc,
+      '整改情况': d.rectify || '待整改',
+      '整改人': d.rectifyBy || '',
+      '记录人': d.recorder,
+      '记录时间': fmtDate(d.createdAt, true),
+    }));
+    downloadExcel(`宿舍台账_${todayStr()}.xlsx`, data, '宿舍检查');
+    Store.addLog(u.name, u.role, '导出宿舍台账');
+    toast('已导出');
+  },
+};
+
+// ============================================================
+// 模块8：台账表格
+// ============================================================
+const Ledger = {
+  TEMPLATES: {
+    signup: { name:'报名表', columns:['序号','姓名','学号','项目','联系电话','备注'] },
+    score: { name:'赛事计分表', columns:['序号','姓名','项目','评委1','评委2','评委3','总分','排名'] },
+    subsidy: { name:'补助明细表', columns:['序号','学号','姓名','补助类型','金额','签字状态','签字时间'] },
+    attendance: { name:'考勤表', columns:['学号','姓名','日期','类型','状态','备注'] },
+    dorm: { name:'宿舍检查表', columns:['宿舍号','日期','类型','扣分','问题描述','整改情况','记录人'] },
+    dispute: { name:'纠纷调解登记表', columns:['序号','涉及人员','事件起因','调解结果','处理人','处理时间'] },
+    student: { name:'学生名单', columns:['序号','学号','姓名','宿舍号','联系电话'] },
+  },
+
+  renderList() {
+    const u = Auth.current();
+    if (!u) { Router.go(''); return; }
+    const canImport = Auth.canManage();
+    $('#app').innerHTML = `
+      ${renderTopbar('台账表格', 'workbench')}
+      <div class="page page-with-nav">
+        <div class="card">
+          <div class="card-header">内置台账模板</div>
+          <div class="card-body" style="padding:0;">
+            ${Object.entries(this.TEMPLATES).map(([key,t]) => `
+              <div class="list-item" onclick="Ledger.showTemplate('${key}')">
+                <div class="li-main">
+                  <div class="li-title">${t.name}</div>
+                  <div class="li-desc text-small">${t.columns.length}列 · ${escapeHtml(t.columns.join('、'))}</div>
+                </div>
+                <span class="li-arrow">&rsaquo;</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ${canImport ? `
+        <div class="card">
+          <div class="card-header">学生名单管理</div>
+          <div class="card-body">
+            <p class="text-small text-muted mb-8">当前名单：${Store.getStudents().length} 人</p>
+            <input type="file" id="studentImport" accept=".xlsx,.xls" class="btn btn-outline btn-block mb-8">
+            <button class="btn btn-primary btn-block mb-8" onclick="Ledger.importStudents()">导入学生名单</button>
+            <button class="btn btn-outline btn-block" onclick="Ledger.exportStudents()">导出学生名单</button>
+          </div>
+        </div>` : ''}
+      </div>
+      ${renderBottomNav()}
+    `;
+  },
+
+  showTemplate(key) {
+    const t = this.TEMPLATES[key];
+    const u = Auth.current();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header"><span>${t.name}</span><button class="modal-close">&times;</button></div>
+        <div class="modal-body">
+          <p class="text-small text-muted mb-12">模板列：${escapeHtml(t.columns.join('、'))}</p>
+          <input type="file" id="tgFile" accept=".xlsx,.xls" class="btn btn-outline btn-block mb-8">
+          <button class="btn btn-primary btn-block mb-8" onclick="Ledger.exportTemplate('${key}')">下载空白模板</button>
+          ${Auth.canManage() ? `<button class="btn btn-outline btn-block" onclick="Ledger.importTemplate('${key}')">导入数据</button>`:''}
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+    this._tgFile = overlay.querySelector('#tgFile');
+  },
+
+  exportTemplate(key) {
+    const t = this.TEMPLATES[key];
+    const emptyRow = {};
+    t.columns.forEach(c => emptyRow[c] = '');
+    downloadExcel(`${t.name}_模板.xlsx`, [emptyRow], t.name);
+    toast('已下载模板');
+  },
+
+  async importTemplate(key) {
+    const file = this._tgFile?.files[0];
+    if (!file) { toast('请选择Excel文件'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      // 按模板类型分发处理
+      if (key === 'student') {
+        this.processStudentRows(rows);
+      } else if (key === 'subsidy') {
+        this.processSubsidyRows(rows);
+      } else {
+        // 通用：直接导出预览
+        const t = this.TEMPLATES[key];
+        downloadExcel(`${t.name}_导入预览.xlsx`, rows, t.name);
+        toast(`已导入${rows.length}条，已导出预览`);
+      }
+      $('.modal-overlay')?.remove();
+    };
+    reader.readAsArrayBuffer(file);
+  },
+
+  processStudentRows(rows) {
+    const students = [];
+    rows.forEach((r, i) => {
+      const stuNo = String(r['学号'] || '').trim();
+      const name = String(r['姓名'] || '').trim();
+      const dorm = String(r['宿舍号'] || r['宿舍'] || '').trim();
+      const phone = String(r['联系电话'] || r['电话'] || '').trim();
+      if (name) students.push({ id:uid(), stuNo, name, dorm, phone, createdAt:now() });
+    });
+    if (!students.length) { toast('未解析到有效数据'); return; }
+    Store.saveStudents(students);
+    Store.addLog(Auth.current().name, Auth.current().role, '导入学生名单', `${students.length}人`);
+    toast(`已导入${students.length}名学生`);
+  },
+
+  importStudents() {
+    const file = $('#studentImport')?.files[0];
+    if (!file) { toast('请选择Excel文件'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval:'' });
+      this.processStudentRows(rows);
+      this.renderList();
+    };
+    reader.readAsArrayBuffer(file);
+  },
+
+  exportStudents() {
+    const students = Store.getStudents();
+    if (!students.length) { toast('名单为空'); return; }
+    const data = students.map((s, i) => ({
+      '序号': i+1,
+      '学号': s.stuNo,
+      '姓名': s.name,
+      '宿舍号': s.dorm || '',
+      '联系电话': s.phone || '',
+    }));
+    downloadExcel(`学生名单_${todayStr()}.xlsx`, data, '学生名单');
+    toast('已导出');
+  },
+};
+
+// ============================================================
+// 模块9：消息提醒看板
+// ============================================================
+const Reminder = {
+  renderDashboard(u) {
+    const items = this.getItems(u);
+    if (!items.length) return '';
     return `
-    <nav class="bottom-nav">
-        <div class="nav-item ${active==='home'?'active':''}" onclick="router.go('home')">
-            <span class="nav-ico">🏠</span><span class="nav-txt">工作台</span>
+      <div class="reminder-section">
+        <div class="flex-between mb-8" style="padding:0 4px;">
+          <span class="fw-600 text-small">待办提醒</span>
+          <span class="text-muted text-small">${items.length}项</span>
         </div>
-        <div class="nav-item ${active==='mine'?'active':''}" onclick="router.go('mine')">
-            <span class="nav-ico">👤</span><span class="nav-txt">我的</span>
-        </div>
-    </nav>`;
-}
+        ${items.map(it => `
+          <div class="reminder-item ${it.level === 'warning' ? 'r-warning' : it.level === 'info' ? 'r-info' : ''}" onclick="Router.go('${it.link}')">
+            <div class="ri-title">${escapeHtml(it.title)}</div>
+            <div class="ri-desc">${escapeHtml(it.desc)}</div>
+          </div>
+        `).join('')}
+      </div>`;
+  },
 
-/* ========== 工作台 ========== */
-function renderHome() {
-    const isStudent = currentUser && currentUser.role === 'student';
-    const isLeader = currentUser && currentUser.role === 'leader';
+  getItems(u) {
     const items = [];
-    if (isStudent) {
-        items.push({ icon:'📢', name:'班务通知', path:'notify' });
-        items.push({ icon:'💳', name:'补助签字', path:'subsidy' });
-        items.push({ icon:'💰', name:'缴费核对', path:'payment' });
-        items.push({ icon:'📋', name:'我的考勤', path:'attendance' });
-        items.push({ icon:'🏠', name:'宿舍情况', path:'dorm' });
-        items.push({ icon:'⚖️', name:'纠纷调解', path:'dispute' });
-        items.push({ icon:'📊', name:'台账表格', path:'ledger' });
-    } else {
-        items.push({ icon:'📢', name:'班务通知', path:'notify' });
-        items.push({ icon:'💳', name:'补助管理', path:'subsidy' });
-        items.push({ icon:'💰', name:'缴费核对', path:'payment' });
-        items.push({ icon:'📋', name:'考勤管理', path:'attendance' });
-        items.push({ icon:'⚖️', name:'纠纷调解', path:'dispute' });
-        items.push({ icon:'🏠', name:'宿舍记录', path:'dorm' });
-        items.push({ icon:'📊', name:'台账表格', path:'ledger' });
+    if (u.role === 'student') {
+      // 未签字补助
+      Store.get('subsidies', []).forEach(t => {
+        if (isExpired(t.deadline)) return;
+        const item = t.items.find(i => i.stuId === u.id);
+        const sign = t.signs.find(s => s.stuId === u.id && s.valid !== false);
+        if (item && !sign) {
+          items.push({ title:`补助签字待办：${t.title}`, desc:`截止 ${fmtDate(t.deadline, true)}`, level:'danger', link:'subsidy' });
+        }
+      });
+      // 未缴费
+      const t = Tuition.getRecord(u.id);
+      if (t && t.payable > 0 && t.paidStatus !== 'confirmed' && !t.paidProof) {
+        items.push({ title:'缴费待办', desc:`应缴 ¥${t.payable}，请上传凭证`, level:'danger', link:'tuition' });
+      }
+    } else if (u.role === 'teacher') {
+      // 待审批请假
+      const pending = Store.get('leaves', []).filter(l => l.status === 'pending');
+      pending.forEach(l => {
+        items.push({ title:`待审批请假：${l.stuName}`, desc:`${l.start} 至 ${l.end}`, level:'warning', link:'leave' });
+      });
     }
-    return `
-    <div class="page home-page">
-        <div class="home-head">
-            <div class="home-welcome">
-                <div class="home-school">云南工业信息职业学院</div>
-                <div class="home-class">计算机网络技术2501班 · 工作台</div>
+    // 待整改宿舍（班长/班主任）
+    if (u.role === 'monitor' || u.role === 'teacher') {
+      const pending = Store.get('dorms', []).filter(d => !d.rectify);
+      pending.forEach(d => {
+        items.push({ title:`宿舍待整改：${d.dormNo}`, desc:`${d.desc}`, level:'warning', link:'dorm' });
+      });
+      // 待核对缴费
+      if (u.role === 'monitor') {
+        const pendingTuition = Store.get('tuitions', []).filter(t => t.paidProof && t.paidStatus === 'pending');
+        if (pendingTuition.length) {
+          items.push({ title:`缴费凭证待核对 ${pendingTuition.length} 条`, desc:'请尽快核对', level:'info', link:'tuition' });
+        }
+      }
+    }
+    return items;
+  },
+
+  updateBadges(u) {
+    // 红点逻辑已嵌入getModuleBadge，无需额外处理
+  },
+};
+
+// ============================================================
+// 操作日志模块
+// ============================================================
+Router.register('log', () => {
+  const u = Auth.current();
+  if (!u) { Router.go(''); return; }
+  if (u.role !== 'teacher' && u.role !== 'monitor') { toast('无权限'); Router.go('workbench'); return; }
+  const logs = Store.getLogs().slice(-200).reverse();
+  $('#app').innerHTML = `
+    ${renderTopbar('操作日志', 'workbench', `<button class="btn-action" onclick="Log.export()">导出</button>`)}
+    <div class="page page-with-nav">
+      <div class="card">
+        <div class="card-body" style="padding:0;">
+          ${logs.length ? logs.map(l => `
+            <div class="list-item">
+              <div class="li-main">
+                <div class="li-title">${escapeHtml(l.actor)} <span class="text-muted text-small">(${l.role==='student'?'学生':l.role==='monitor'?'班长':'班主任'})</span></div>
+                <div class="li-desc">${escapeHtml(l.action)} ${l.target?`· 目标:${escapeHtml(l.target).slice(0,12)}`:''}</div>
+              </div>
+              <span class="li-meta">${fmtDateShort(l.time)}</span>
             </div>
+          `).join('') : emptyState('暂无操作日志')}
         </div>
-        <div class="home-user">
-            <span class="home-name">${escapeHtml(currentUser ? currentUser.name : '')}</span>
-            <span class="badge ${currentUser.role==='teacher'?'teacher':(currentUser.role==='leader'?'leader':'')}">${roleName(currentUser.role)}</span>
-        </div>
-        <div class="grid">
-            ${items.map(function(it){
-                return `<div class="grid-item" onclick="router.go('${it.path}')">
-                    <span class="grid-ico">${it.icon}</span>
-                    <span class="grid-name">${it.name}</span>
-                </div>`;
-            }).join('')}
-        </div>
-        <div class="safe-tip">🔒 操作全程留痕 · 防代签 · 纠纷隐私保护</div>
-    </div>`;
-}
+      </div>
+    </div>
+    ${renderBottomNav()}
+  `;
+});
 
-function roleName(r) {
-    if (r === 'leader') return '班长';
-    if (r === 'teacher') return '班主任';
-    return '学生';
-}
+const Log = {
+  export() {
+    const u = Auth.current();
+    if (!Auth.canManage()) return;
+    const data = Store.getLogs().map(l => ({
+      '操作人': l.actor,
+      '角色': l.role==='student'?'学生':l.role==='monitor'?'班长':'班主任',
+      '操作': l.action,
+      '目标': l.target || '',
+      '时间': fmtDate(l.time, true),
+    }));
+    downloadExcel(`操作日志_${todayStr()}.xlsx`, data, '操作日志');
+    Store.addLog(u.name, u.role, '导出操作日志');
+    toast('已导出');
+  },
+};
 
-/* ========== 我的页面 ========== */
-function renderMine() {
-    const u = currentUser;
-    return `
-    <div class="page mine-page">
-        <div class="page-head">
-            <h2>我的</h2>
-            <button class="icon-btn" onclick="router.go('home')">⌂</button>
-        </div>
-        <div class="card mine-card">
-            <div class="mine-avatar">${escapeHtml((u.name||'?').slice(0,1))}</div>
-            <div class="mine-info">
-                <div class="mine-name">${escapeHtml(u.name||'')}</div>
-                <div class="mine-role">${roleName(u.role)}</div>
-                <div class="mine-id">学号/账号：${escapeHtml(u.studentNo || u.username || u.id || '')}</div>
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-title">数据管理</div>
-            <button class="btn ghost full" onclick="exportAll()">📤 导出全量数据（JSON）</button>
-            <button class="btn ghost full" onclick="exportExcel()">📊 导出统计（CSV/Excel）</button>
-        </div>
-        <div class="card">
-            <div class="card-title">账号操作</div>
-            ${u.role === 'leader' ? `<button class="btn ghost full" onclick="showManageStudents()">👥 管理学生名单</button>` : ''}
-            <button class="btn ghost full" onclick="logout()">🚪 退出登录</button>
-        </div>
-    </div>`;
-}
-
-/* ========== 学生名单管理（班长） ========== */
-function showManageStudents() {
-    const list = getStudentList();
-    openModal(`
-        <h3>学生名单管理</h3>
-        <p class="sign-tip">当前 ${list.length} 人。格式：姓名,学号（每行一人）</p >
-        <div class="field"><label>学生名单</label><textarea id="stu-list" rows="10">${list.map(function(s){ return s.name + ',' + (s.studentNo||''); }).join('\n')}</textarea></div>
-        <div class="modal-btns">
-            <button class="btn ghost" onclick="closeModal()">取消</button>
-            <button class="btn primary" onclick="saveStudentList()">保存</button>
-        </div>
-    `);
-}
-
-function saveStudentList() {
-    const text = val('stu-list');
-    const lines = text.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
-    const newList = lines.map(function(line){
-        const parts = line.split(/[,，]/).map(function(p){ return p.trim(); });
-        return { name: parts[0] || '未命名', studentNo: parts[1] || '', id: parts[1] || 's' + Math.random().toString(36).slice(2,8) };
+// ============================================================
+// 系统设置 + 账号管理
+// ============================================================
+const Account = {
+  // 列出所有账号
+  async list() {
+    const { data, error } = await sb
+      .from('users')
+      .select('username, name, role, stu_no, dorm, phone')
+      .order('role', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+  // 新建账号（bcrypt 在数据库端完成）
+  async create({ username, password, name, role='student', stuNo='', dorm='', phone='' }) {
+    const { data, error } = await sb.rpc('create_user', {
+      username_arg: username, password_arg: password,
+      name_arg: name, role_arg: role,
+      stu_no_arg: stuNo || null, dorm_arg: dorm || null, phone_arg: phone || null,
     });
-    store.data.studentList = newList;
-    addLog('更新学生名单', newList.length + ' 人', 'student');
-    store.save(); closeModal(); toast('学生名单已更新'); router.render();
-}
-
-function getStudentList() { return store.data.studentList || []; }
-
-/* ========== 弹窗与提示 ========== */
-function openModal(html) {
-    const wrap = document.createElement('div');
-    wrap.className = 'modal-mask';
-    wrap.innerHTML = `<div class="modal-box">${html}</div>`;
-    document.body.appendChild(wrap);
-}
-function closeModal() {
-    const m = document.querySelector('.modal-mask');
-    if (m) m.remove();
-}
-function val(id) {
-    const el = document.getElementById(id);
-    return el ? el.value : '';
-}
-
-/* ========== 操作留痕 ========== */
-function addLog(action, detail, module, who) {
-    store.data.logs = store.data.logs || [];
-    store.data.logs.push({
-        time: Date.now(),
-        who: (who && who.name) || (currentUser ? currentUser.name : '系统'),
-        role: (who && who.role) || (currentUser ? currentUser.role : ''),
-        action: action, detail: detail, module: module || ''
+    if (error) throw new Error(error.message);
+    return data;
+  },
+  // 重置密码
+  async resetPassword(username, newPassword) {
+    const { error } = await sb.rpc('reset_password', {
+      username_arg: username, new_password: newPassword,
     });
-    store.markDirty('logs');
-}
+    if (error) throw new Error(error.message);
+  },
+  // 从学生名单批量创建账号
+  async batchCreate(students) {
+    let created = 0, failed = 0;
+    for (const s of students) {
+      try {
+        await this.create({
+          username: s.stuNo, password: s.stuNo, // 初始密码=学号
+          name: s.name, role: 'student', stuNo: s.stuNo, dorm: s.dorm || '',
+        });
+        created++;
+      } catch (e) {
+        if (String(e.message).includes('账号已存在')) { created++; }
+        else { failed++; console.error(s.name, e); }
+      }
+    }
+    return { created, failed };
+  },
+};
 
-/* ========== 登录状态检查 ========== */
-function checkSession() {
-    const s = sb.auth.getSession();
-    currentUser = s && s.user ? { id: s.user.id, name: s.user.user_metadata.name || '', role: s.user.user_metadata.role || 'student' } : null;
-}
+Router.register('settings', () => {
+  const u = Auth.current();
+  if (!Auth.canManage()) { toast('无权限'); Router.go('workbench'); return; }
+  const cfg = Store.getConfig();
+  $('#app').innerHTML = `
+    ${renderTopbar('系统设置', 'workbench')}
+    <div class="page page-with-nav">
+      <div class="card">
+        <div class="card-header">账号管理</div>
+        <div class="card-body">
+          <p class="text-small text-muted mb-8">为学生创建登录账号（账号=学号，初始密码=学号，学生登录后可改）</p>
+          <button class="btn btn-primary btn-block mb-8" onclick="Account.showCreate()">+ 新建单个账号</button>
+          <button class="btn btn-outline btn-block mb-8" onclick="Account.batchFromStudents()">从学生名单批量建号</button>
+          <button class="btn btn-gray btn-block" onclick="Account.showList()">查看全部账号</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">缴费规则</div>
+        <div class="card-body">
+          <div class="form-group"><label>全额缴费（元）</label><input type="number" id="cfgFull" value="${cfg.tuitionFull}"></div>
+          <div class="form-group"><label>学费（元）</label><input type="number" id="cfgTuitionFee" value="${cfg.tuitionFee}"></div>
+          <div class="form-group"><label>住宿费（元）</label><input type="number" id="cfgDormFee" value="${cfg.dormFee}"></div>
+          <button class="btn btn-primary btn-block" onclick="saveTuition()">保存规则</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">数据管理</div>
+        <div class="card-body">
+          <button class="btn btn-outline btn-block mb-8" onclick="exportAllData()">导出全部数据</button>
+          <button class="btn btn-danger btn-block" onclick="clearAllData()">清空全部数据</button>
+        </div>
+      </div>
+    </div>
+    ${renderBottomNav()}
+  `;
+});
 
-/* ========== 退出登录 ========== */
-function logout() {
-    if (!confirm('确定退出登录吗？')) return;
-    sb.auth.signOut();
-    currentUser = null;
-    window.location.hash = 'login';
-    renderPage();
-}
-
-/* ========== 应用启动 ========== */
-async function initApp() {
-    // 1. 加载云端数据
+// 新建单个账号
+Account.showCreate = function() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header"><span>新建账号</span><button class="modal-close">&times;</button></div>
+      <div class="modal-body">
+        <div class="form-group"><label>账号</label><input type="text" id="acUsername" placeholder="学生用学号"></div>
+        <div class="form-group"><label>姓名</label><input type="text" id="acName" placeholder="姓名"></div>
+        <div class="form-group"><label>角色</label>
+          <select id="acRole"><option value="student">学生</option><option value="monitor">班长</option><option value="teacher">班主任</option></select>
+        </div>
+        <div class="form-group"><label>宿舍号</label><input type="text" id="acDorm" placeholder="如 3-201"></div>
+        <div class="form-group"><label>初始密码</label><input type="text" id="acPassword" placeholder="默认与账号相同"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn btn-primary" style="flex:1;" id="acCreateBtn">创建</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  overlay.querySelector('#acCreateBtn').onclick = async () => {
+    const username = overlay.querySelector('#acUsername').value.trim();
+    const name = overlay.querySelector('#acName').value.trim();
+    if (!username || !name) { toast('请填写账号和姓名'); return; }
+    const password = overlay.querySelector('#acPassword').value.trim() || username;
+    const role = overlay.querySelector('#acRole').value;
+    const dorm = overlay.querySelector('#acDorm').value.trim();
     try {
-        await Store.loadAll();
-    } catch(e) { console.warn('云端加载失败', e); }
-    // 2. 恢复登录会话
-    checkSession();
-    // 3. 首次渲染
-    if (!window.location.hash || window.location.hash === '#') {
-        window.location.hash = currentUser ? 'home' : 'login';
-    }
-    renderPage();
+      await Account.create({ username, password, name, role, dorm });
+      Store.addLog(Auth.current().name, Auth.current().role, '创建账号', username);
+      overlay.remove();
+      toast('创建成功');
+    } catch (e) { toast('创建失败：' + (e.message || e)); }
+  };
+};
+
+// 从学生名单批量建号
+Account.batchFromStudents = async function() {
+  const students = Store.getStudents();
+  if (!students.length) { toast('请先导入学生名单'); Router.go('ledger'); return; }
+  const ok = await confirmDialog(`将从学生名单为 ${students.length} 人批量创建账号（账号=学号，密码=学号）。确认？`);
+  if (!ok) return;
+  toast('正在创建，请稍候...');
+  try {
+    const res = await Account.batchCreate(students);
+    Store.addLog(Auth.current().name, Auth.current().role, '批量创建学生账号', `${res.created}人`);
+    toast(`完成：成功 ${res.created}${res.failed?`，失败 ${res.failed}`:''}`);
+  } catch (e) {
+    toast('批量建号失败：' + (e.message || e));
+  }
+};
+
+// 查看全部账号 + 重置密码
+Account.showList = async function() {
+  const u = Auth.current();
+  if (!Auth.canManage()) return;
+  let accounts = [];
+  try { accounts = await Account.list(); }
+  catch { toast('加载账号失败'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header"><span>全部账号（${accounts.length}）</span><button class="modal-close">&times;</button></div>
+      <div class="modal-body" style="padding:0;">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>宿舍</th><th>重置密码</th></tr></thead>
+            <tbody>
+              ${accounts.map(a => `
+                <tr>
+                  <td>${escapeHtml(a.username)}</td>
+                  <td>${escapeHtml(a.name)}</td>
+                  <td>${a.role==='monitor'?'班长':a.role==='teacher'?'班主任':'学生'}</td>
+                  <td>${escapeHtml(a.dorm || '')}</td>
+                  <td><button class="btn btn-sm btn-outline" onclick="Account.resetPwd('${escapeHtml(a.username)}')">重置</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-gray" style="flex:1;" onclick="this.closest('.modal-overlay').remove()">关闭</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('.modal-close').onclick = () => overlay.remove();
+  Account._accounts = accounts;
+};
+
+Account.resetPwd = async function(username) {
+  const newPwd = await promptDialog(`重置 ${username} 的密码`, '输入新密码');
+  if (!newPwd) return;
+  try {
+    await Account.resetPassword(username, newPwd);
+    Store.addLog(Auth.current().name, Auth.current().role, '重置密码', username);
+    toast('密码已重置');
+    $('.modal-overlay')?.remove();
+  } catch (e) { toast('重置失败：' + (e.message || e)); }
+};
+
+function saveTuition() {
+  const cfg = Store.getConfig();
+  cfg.tuitionFull = parseFloat($('#cfgFull').value) || 5800;
+  cfg.tuitionFee = parseFloat($('#cfgTuitionFee').value) || 5000;
+  cfg.dormFee = parseFloat($('#cfgDormFee').value) || 800;
+  Store.saveConfig(cfg);
+  Store.addLog(Auth.current().name, Auth.current().role, '修改缴费规则');
+  toast('已保存');
 }
 
-/* ========== 事件绑定 ========== */
-window.addEventListener('hashchange', function() {
-    renderPage();
-});
+async function clearAllData() {
+  const ok = await confirmDialog('确认清空全部业务数据？此操作不可恢复！');
+  if (!ok) return;
+  const ok2 = await confirmDialog('再次确认！所有通知、签字、缴费、考勤等数据将被删除！');
+  if (!ok2) return;
+  ['config','students','notifications','subsidies','tuitions','tuitionQrcode',
+    'attendances','leaves','disputes','dorms','operationLogs'
+  ].forEach(k => Store.remove(k));
+  toast('已清空');
+}
 
-window.addEventListener('DOMContentLoaded', function() {
-    initApp();
-});
+// 注册剩余路由
+Router.register('attendance', () => Attendance.renderList());
+Router.register('leave', () => Leave.renderList());
+Router.register('dispute', () => Dispute.renderList());
+Router.register('dorm', () => Dorm.renderList());
+Router.register('ledger', () => Ledger.renderList());
+// settings 路由已在上方注册，此处不再重复
+
+
+
